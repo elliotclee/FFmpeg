@@ -40,4 +40,14 @@
 /lcov/
 /src
 /mapfile
+/.vs
+/ffmpeg.sln
+/ffmpeg.vcxproj
+/ffmpeg.vcxproj.filters
+/ffmpeg.vcxproj.user
 /tools/python/__pycache__/
+/.vs
+/ffmpeg.sln
+/ffmpeg.vcxproj
+/ffmpeg.vcxproj.filters
+/ffmpeg.vcxproj.user
