@@ -39,6 +39,14 @@
 #include <d3d11.h>
 #include <stdint.h>
 
+typedef struct D3D11TextureInfo {
+    int index;
+    ID3D11Texture2D *texture;
+
+    ID3D11Texture2D *staging_texture;
+} D3D11TextureInfo;
+
+
 /**
  * This struct is allocated as AVHWDeviceContext.hwctx
  */
@@ -79,21 +87,21 @@ typedef struct AVD3D11VADeviceContext {
      */
     ID3D11VideoContext  *video_context;
 
-    /**
-     * Callbacks for locking. They protect accesses to device_context and
-     * video_context calls. They also protect access to the internal staging
-     * texture (for av_hwframe_transfer_data() calls). They do NOT protect
-     * access to hwcontext or decoder state in general.
-     *
-     * If unset on init, the hwcontext implementation will set them to use an
-     * internal mutex.
-     *
-     * The underlying lock must be recursive. lock_ctx is for free use by the
-     * locking implementation.
-     */
-    void (*lock)(void *lock_ctx);
-    void (*unlock)(void *lock_ctx);
-    void *lock_ctx;
+    /////**
+    //// * Callbacks for locking. They protect accesses to device_context and
+    //// * video_context calls. They also protect access to the internal staging
+    //// * texture (for av_hwframe_transfer_data() calls). They do NOT protect
+    //// * access to hwcontext or decoder state in general.
+    //// *
+    //// * If unset on init, the hwcontext implementation will set them to use an
+    //// * internal mutex.
+    //// *
+    //// * The underlying lock must be recursive. lock_ctx is for free use by the
+    //// * locking implementation.
+    //// */
+    ////void (*lock)(void *lock_ctx);
+    ////void (*unlock)(void *lock_ctx);
+    ////void *lock_ctx;
 } AVD3D11VADeviceContext;
 
 /**
@@ -165,14 +173,16 @@ typedef struct AVD3D11VAFramesContext {
      */
     UINT MiscFlags;
 
-    /**
-     * In case if texture structure member above is not NULL contains the same texture
-     * pointer for all elements and different indexes into the array texture.
-     * In case if texture structure member above is NULL, all elements contains
-     * pointers to separate non-array textures and 0 indexes.
-     * This field is ignored/invalid if a user-allocated texture is provided.
-    */
-    AVD3D11FrameDescriptor *texture_infos;
+     /**
+      * In case if texture structure member above is not NULL contains the same texture
+      * pointer for all elements and different indexes into the array texture.
+      * In case if texture structure member above is NULL, all elements contains
+      * pointers to separate non-array textures and 0 indexes.
+      * This field is ignored/invalid if a user-allocated texture is provided.
+     */
+    D3D11TextureInfo *texture_infos;
+    int nb_surfaces_used;
+
 } AVD3D11VAFramesContext;
 
 #endif /* AVUTIL_HWCONTEXT_D3D11VA_H */

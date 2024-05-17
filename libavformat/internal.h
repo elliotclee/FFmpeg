@@ -240,6 +240,10 @@ typedef struct FFStream {
      */
     int need_context_update;
 
+    /**
+     * The wallclock timestamp of the most recent read packet (if AVFMT_FLAG_FILL_WALLCLOCK_DTS is set)
+     */
+    int64_t cur_wallclock_time;
     int is_intra_only;
 
     FFFrac *priv_pts;

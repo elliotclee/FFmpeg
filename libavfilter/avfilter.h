@@ -41,10 +41,12 @@
 #include "libavutil/avutil.h"
 #include "libavutil/buffer.h"
 #include "libavutil/dict.h"
+#include "libavutil/bprint.h"
 #include "libavutil/frame.h"
 #include "libavutil/log.h"
 #include "libavutil/samplefmt.h"
 #include "libavutil/pixfmt.h"
+#include "libavutil/subfmt.h"
 #include "libavutil/rational.h"
 
 #include "libavfilter/version_major.h"
@@ -350,6 +352,12 @@ typedef struct AVFilter {
          */
         const enum AVSampleFormat *samples_list;
         /**
+         * Analogous to pixels, but delimited by AV_SUBTITLE_FMT_NONE
+         * and restricted to filters that only have AVMEDIA_TYPE_SUBTITLE
+         * inputs and outputs.
+         */
+        const enum AVSubtitleType *subs_list;
+        /**
          * Equivalent to { pix_fmt, AV_PIX_FMT_NONE } as pixels_list.
          */
         enum AVPixelFormat  pix_fmt;
@@ -357,6 +365,10 @@ typedef struct AVFilter {
          * Equivalent to { sample_fmt, AV_SAMPLE_FMT_NONE } as samples_list.
          */
         enum AVSampleFormat sample_fmt;
+        /**
+         * Equivalent to { sub_fmt, AV_SUBTITLE_FMT_NONE } as subs_list.
+         */
+        enum AVSubtitleType sub_fmt;
     } formats;
 
     int priv_size;      ///< size of private data to allocate for the filter
@@ -739,6 +751,17 @@ int avfilter_link(AVFilterContext *src, unsigned srcpad,
 void avfilter_link_free(AVFilterLink **link);
 
 /**
+ * Gets the formats from an AVFilterFormatsConfig.
+ *
+ * @param bp         an instance of AVBPrint
+ * @param filter     the AVFilter
+ * @param for_output set to 1 for filter outputs
+ * @param pad_index  the index of the input or output
+ * @return           zero on success
+ */
+int avfilter_print_config_formats(AVBPrint *bp, const AVFilter *filter, int for_output, unsigned pad_index);
+
+/**
  * Negotiate the media format, dimensions, etc of all inputs to a filter.
  *
  * @param filter the filter to negotiate the properties for its inputs
@@ -936,6 +959,28 @@ typedef struct AVFilterGraph {
 
     unsigned disable_auto_convert;
 } AVFilterGraph;
+
+/**
+ * Allocate a new filter context and return it.
+ *
+ * @param filter what filter to create an instance of
+ * @param inst_name name to give to the new filter context
+ *
+ * @return newly created filter context or NULL on failure
+ *
+ * @note for adding a filter to a filtergraph, use
+ *       avfilter_graph_alloc_filter() instead.
+ */
+AVFilterContext *avfilter_alloc(const AVFilter *filter, const char *inst_name);
+
+/**
+ * Query the formats of a filter.
+ *
+ * @param filter the filter context
+ *
+ * @return 0 on success
+ */
+int avfilter_query_formats(AVFilterContext *filter);
 
 /**
  * Allocate a filter graph.

@@ -50,6 +50,7 @@
 #include "cmdutils.h"
 #include "fopen_utf8.h"
 #include "opt_common.h"
+#include "libavdevice/avdevice.h"
 #ifdef _WIN32
 #include <windows.h>
 #include "compat/w32dlfcn.h"
@@ -95,7 +96,12 @@ void exit_program(int ret)
     if (program_exit)
         program_exit(ret);
 
+#if defined (__ANDROID__)
+    fflush(stdout);
+    quick_exit(ret);
+#else
     exit(ret);
+#endif
 }
 
 double parse_number_or_die(const char *context, const char *numstr, int type,
@@ -1015,4 +1021,14 @@ double get_rotation(int32_t *displaymatrix)
                "and contact the ffmpeg-devel mailing list. (ffmpeg-devel@ffmpeg.org)");
 
     return theta;
+}
+
+void print_local_time(void)
+{
+    time_t now;
+    struct tm *tm;
+    time(&now);
+    tm = localtime(&now);
+
+    av_log(NULL, AV_LOG_INFO, "Execution Date: %d-%02d-%02d %02d:%02d:%02d\n", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 }

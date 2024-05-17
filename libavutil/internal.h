@@ -195,7 +195,7 @@ void avpriv_request_sample(void *avc,
 #define SIZE_SPECIFIER "zu"
 #endif
 
-#ifdef DEBUG
+#ifdef DEBUG_XXX
 #   define ff_dlog(ctx, ...) av_log(ctx, AV_LOG_DEBUG, __VA_ARGS__)
 #else
 #   define ff_dlog(ctx, ...) do { if (0) av_log(ctx, AV_LOG_DEBUG, __VA_ARGS__); } while (0)

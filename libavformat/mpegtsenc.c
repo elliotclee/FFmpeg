@@ -558,6 +558,8 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
         case AVMEDIA_TYPE_AUDIO:
             if (codec_id == AV_CODEC_ID_AC3)
                 put_registration_descriptor(&q, MKTAG('A', 'C', '-', '3'));
+            if (codec_id == AV_CODEC_ID_AC4)
+                put_registration_descriptor(&q, MKTAG('A', 'C', '-', '4'));
             if (codec_id == AV_CODEC_ID_EAC3)
                 put_registration_descriptor(&q, MKTAG('E', 'A', 'C', '3'));
             if (ts->flags & MPEGTS_FLAG_SYSTEM_B) {
@@ -1873,6 +1875,7 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
     ts_st->first_timestamp_checked = 1;
 
     if (st->codecpar->codec_id == AV_CODEC_ID_H264) {
+
         const uint8_t *p = buf, *buf_end = p + size;
         uint32_t state = -1;
         int extradd = (pkt->flags & AV_PKT_FLAG_KEY) ? st->codecpar->extradata_size : 0;

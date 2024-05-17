@@ -358,6 +358,14 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
+        // Set the subtitle type from the codec descriptor in case the decoder hasn't done itself
+        if (avctx->codec_type == AVMEDIA_TYPE_SUBTITLE && avctx->subtitle_type == AV_SUBTITLE_FMT_UNKNOWN) {
+            if(avctx->codec_descriptor->props & AV_CODEC_PROP_BITMAP_SUB)
+                avctx->subtitle_type = AV_SUBTITLE_FMT_BITMAP;
+            if(avctx->codec_descriptor->props & AV_CODEC_PROP_TEXT_SUB)
+                 avctx->subtitle_type = AV_SUBTITLE_FMT_ASS;
+        }
+
 #if FF_API_AVCTX_TIMEBASE
         if (avctx->framerate.num > 0 && avctx->framerate.den > 0)
             avctx->time_base = av_inv_q(av_mul_q(avctx->framerate, (AVRational){avctx->ticks_per_frame, 1}));
@@ -408,6 +416,17 @@ void avcodec_flush_buffers(AVCodecContext *avctx)
     avci->nb_draining_errors = 0;
     av_frame_unref(avci->buffer_frame);
     av_packet_unref(avci->buffer_pkt);
+
+    av_packet_unref(avci->last_pkt_props);
+
+//Emby Custom (based on code published by Plex at http://downloads.plex.tv/ffmpeg-source/ffmpeg-2018-03-22.tar.gz)
+    av_packet_unref(&avctx->internal->send_pkt);
+
+    while (av_fifo_read(avci->pkt_props, avci->last_pkt_props, 1) >= 0)
+        av_packet_unref(avci->last_pkt_props);
+
+    av_frame_unref(avci->in_frame);
+    av_packet_unref(avci->in_pkt);
 
     if (HAVE_THREADS && avctx->active_thread_type & FF_THREAD_FRAME)
         ff_thread_flush(avctx);

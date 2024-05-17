@@ -31,6 +31,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mastering_display_metadata.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
@@ -85,6 +86,31 @@ static av_cold int init(AVFilterContext *ctx)
         s->param = 1.0f;
 
     return 0;
+}
+
+static double determine_signal_peak(AVFrame *in)
+{
+    AVFrameSideData *sd = av_frame_get_side_data(in, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+    double peak = 0;
+
+    if (sd) {
+        AVContentLightMetadata *clm = (AVContentLightMetadata *)sd->data;
+        peak = clm->MaxCLL / REFERENCE_WHITE;
+    }
+
+    sd = av_frame_get_side_data(in, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+    if (!peak && sd) {
+        AVMasteringDisplayMetadata *metadata = (AVMasteringDisplayMetadata *)sd->data;
+        if (metadata->has_luminance)
+            peak = av_q2d(metadata->max_luminance) / REFERENCE_WHITE;
+    }
+
+    // For untagged source, use peak of 10000 if SMPTE ST.2084
+    // otherwise assume HLG with reference display peak 1000.
+    if (!peak)
+        peak = in->color_trc == AVCOL_TRC_SMPTE2084 ? 100.0f : 10.0f;
+
+    return peak;
 }
 
 static float hable(float in)
@@ -236,7 +262,7 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
     /* read peak from side data if not passed in */
     if (!peak) {
         peak = ff_determine_signal_peak(in);
-        av_log(s, AV_LOG_DEBUG, "Computed signal peak: %f\n", peak);
+        av_log(s, AV_LOG_DEBUG, "Peak from side data: %f\n", peak);
     }
 
     /* load original color space even if pixel format is RGB to compute overbrights */

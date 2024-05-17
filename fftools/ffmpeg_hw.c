@@ -93,8 +93,6 @@ static char *hw_device_default_name(enum AVHWDeviceType type)
 
 int hw_device_init_from_string(const char *arg, HWDevice **dev_out)
 {
-    // "type=name"
-    // "type=name,key=value,key2=value2"
     // "type=name:device,key=value,key2=value2"
     // "type:device,key=value,key2=value2"
     // -> av_hwdevice_ctx_create()
@@ -126,7 +124,7 @@ int hw_device_init_from_string(const char *arg, HWDevice **dev_out)
     }
 
     if (*p == '=') {
-        k = strcspn(p + 1, ":@,");
+        k = strcspn(p + 1, ":@");
 
         name = av_strndup(p + 1, k);
         if (!name) {
@@ -188,7 +186,7 @@ int hw_device_init_from_string(const char *arg, HWDevice **dev_out)
             goto invalid;
         }
 
-        err = av_hwdevice_ctx_create_derived(&device_ref, type,
+        err = av_hwdevice_ctx_get_or_create_derived(&device_ref, type,
                                              src->device_ref, 0);
         if (err < 0)
             goto fail;
@@ -449,7 +447,7 @@ int hw_device_setup_for_encode(OutputStream *ost)
     AVBufferRef *frames_ref = NULL;
     int i;
 
-    if (ost->filter) {
+    if (ost->filter && ost->filter->filter) {
         frames_ref = av_buffersink_get_hw_frames_ctx(ost->filter->filter);
         if (frames_ref &&
             ((AVHWFramesContext*)frames_ref->data)->format ==

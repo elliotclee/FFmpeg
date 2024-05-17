@@ -2781,7 +2781,7 @@ atrac3al_decoder_select="mdct"
 atrac3p_decoder_select="mdct sinewin"
 atrac3pal_decoder_select="mdct sinewin"
 atrac9_decoder_select="mdct"
-av1_decoder_select="cbs_av1"
+av1_decoder_select="av1_frame_split_bsf cbs_av1"
 bink_decoder_select="blockdsp hpeldsp"
 binkaudio_dct_decoder_select="mdct rdft dct sinewin wma_freqs"
 binkaudio_rdft_decoder_select="mdct rdft sinewin wma_freqs"
@@ -3149,8 +3149,12 @@ scale_npp_filter_deps="ffnvcodec libnpp"
 scale2ref_npp_filter_deps="ffnvcodec libnpp"
 scale_cuda_filter_deps="ffnvcodec"
 scale_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
+superscale_cuda_filter_deps="ffnvcodec"
+superscale_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 thumbnail_cuda_filter_deps="ffnvcodec"
 thumbnail_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
+tonemap_cuda_filter_deps="ffnvcodec"
+tonemap_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 transpose_npp_filter_deps="ffnvcodec libnpp"
 overlay_cuda_filter_deps="ffnvcodec"
 overlay_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
@@ -3180,7 +3184,7 @@ h264_qsv_decoder_select="h264_mp4toannexb_bsf qsvdec"
 h264_qsv_encoder_select="atsc_a53 qsvenc"
 h264_rkmpp_decoder_deps="rkmpp"
 h264_rkmpp_decoder_select="h264_mp4toannexb_bsf"
-h264_vaapi_encoder_select="cbs_h264 vaapi_encode"
+h264_vaapi_encoder_select="atsc_a53 cbs_h264 vaapi_encode"
 h264_v4l2m2m_decoder_deps="v4l2_m2m h264_v4l2_m2m"
 h264_v4l2m2m_decoder_select="h264_mp4toannexb_bsf"
 h264_v4l2m2m_encoder_deps="v4l2_m2m h264_v4l2_m2m"
@@ -3197,7 +3201,7 @@ hevc_qsv_encoder_select="hevcparse qsvenc"
 hevc_rkmpp_decoder_deps="rkmpp"
 hevc_rkmpp_decoder_select="hevc_mp4toannexb_bsf"
 hevc_vaapi_encoder_deps="VAEncPictureParameterBufferHEVC"
-hevc_vaapi_encoder_select="cbs_h265 vaapi_encode"
+hevc_vaapi_encoder_select="atsc_a53 cbs_h265 vaapi_encode"
 hevc_v4l2m2m_decoder_deps="v4l2_m2m hevc_v4l2_m2m"
 hevc_v4l2m2m_decoder_select="hevc_mp4toannexb_bsf"
 hevc_v4l2m2m_encoder_deps="v4l2_m2m hevc_v4l2_m2m"
@@ -3668,6 +3672,7 @@ frei0r_filter_deps="frei0r"
 frei0r_src_filter_deps="frei0r"
 fspp_filter_deps="gpl"
 gblur_vulkan_filter_deps="vulkan spirv_compiler"
+graphicsub2text_filter_deps="libtesseract"
 hflip_vulkan_filter_deps="vulkan spirv_compiler"
 histeq_filter_deps="gpl"
 hqdn3d_filter_deps="gpl"
@@ -3697,6 +3702,7 @@ overlay_qsv_filter_deps="libmfx"
 overlay_qsv_filter_select="qsvvpp"
 overlay_vaapi_filter_deps="vaapi VAProcPipelineCaps_blend_flags"
 overlay_vulkan_filter_deps="vulkan spirv_compiler"
+overlaytextsubs_filter_deps="avcodec libass"
 owdenoise_filter_deps="gpl"
 pad_opencl_filter_deps="opencl"
 pan_filter_deps="swresample"
@@ -3733,9 +3739,13 @@ spp_filter_select="fft idctdsp fdctdsp me_cmp pixblockdsp"
 sr_filter_deps="avformat swscale"
 sr_filter_select="dnn"
 stereo3d_filter_deps="gpl"
+splitcc_filter_deps="avcodec"
+subscale_filter_deps="swscale avcodec"
 subtitles_filter_deps="avformat avcodec libass"
 super2xsai_filter_deps="gpl"
 pixfmts_super2xsai_test_deps="super2xsai_filter"
+text2graphicsub_filter_deps="avformat avcodec libass"
+textsub2video_filter_deps="avcodec libass"
 tinterlace_filter_deps="gpl"
 tinterlace_merge_test_deps="tinterlace_filter"
 tinterlace_pad_test_deps="tinterlace_filter"
@@ -3817,7 +3827,7 @@ avutil_extralibs="d3d11va_extralibs nanosleep_extralibs pthreads_extralibs vaapi
 # programs
 ffmpeg_deps="avcodec avfilter avformat"
 ffmpeg_select="aformat_filter anull_filter atrim_filter format_filter
-               hflip_filter null_filter
+               snull_filter strim_filter hflip_filter null_filter
                transpose_filter trim_filter vflip_filter"
 ffmpeg_suggest="ole32 psapi shell32"
 ffplay_deps="avcodec avformat swscale swresample sdl2"
@@ -3895,7 +3905,8 @@ enable doc
 enable faan faandct faanidct
 enable large_tests
 enable optimizations
-enable ptx_compression
+# tonemap_cuda doesn't work with ptx compression
+disable ptx_compression
 enable runtime_cpudetect
 enable safe_bitstream_reader
 enable static
@@ -6415,7 +6426,7 @@ fi
 if enabled cuda_nvcc; then
     nvccflags="$nvccflags -ptx"
 else
-    nvccflags="$nvccflags -S -nocudalib -nocudainc --cuda-device-only -Wno-c++11-narrowing -include ${source_link}/compat/cuda/cuda_runtime.h"
+    nvccflags="$nvccflags -S -nocudalib -nocudainc --cuda-device-only -Wno-c++11-narrowing -std=c++14 -include ${source_link}/compat/cuda/cuda_runtime.h"
     check_nvcc cuda_llvm
 fi
 
@@ -6666,7 +6677,7 @@ enabled libvpx            && {
 enabled libwebp           && {
     enabled libwebp_encoder      && require_pkg_config libwebp "libwebp >= 0.2.0" webp/encode.h WebPGetEncoderVersion
     enabled libwebp_anim_encoder && check_pkg_config libwebp_anim_encoder "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit; }
-enabled libx264           && check_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode &&
+enabled libx264           && require_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode &&
                              require_cpp_condition libx264 x264.h "X264_BUILD >= 118" && {
                              [ "$toolchain" != "msvc" ] ||
                              require_cpp_condition libx264 x264.h "X264_BUILD >= 158"; } &&
@@ -6753,12 +6764,12 @@ fi
 
 if enabled sdl2; then
     SDL2_CONFIG="${cross_prefix}sdl2-config"
-    test_pkg_config sdl2 "sdl2 >= 2.0.1 sdl2 < 3.0.0" SDL_events.h SDL_PollEvent
+    test_pkg_config sdl2 "sdl2 >= 2.0.1 sdl2 < 2.1.0" SDL_events.h SDL_PollEvent
     if disabled sdl2 && "${SDL2_CONFIG}" --version > /dev/null 2>&1; then
         sdl2_cflags=$("${SDL2_CONFIG}" --cflags)
         sdl2_extralibs=$("${SDL2_CONFIG}" --libs)
         test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) >= 0x020001" $sdl2_cflags &&
-        test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) < 0x030000" $sdl2_cflags &&
+        test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) < 0x020100" $sdl2_cflags &&
         check_func_headers SDL_events.h SDL_PollEvent $sdl2_extralibs $sdl2_cflags &&
             enable sdl2
     fi
@@ -7887,7 +7898,7 @@ print_enabled_components(){
         fi
     done
     if [ "$name" = "filter_list" ]; then
-        for c in asrc_abuffer vsrc_buffer asink_abuffer vsink_buffer; do
+        for c in asrc_abuffer vsrc_buffer ssrc_sbuffer asink_abuffer vsink_buffer ssink_sbuffer; do
             printf "    &ff_%s,\n" $c >> $TMPH
         done
     fi

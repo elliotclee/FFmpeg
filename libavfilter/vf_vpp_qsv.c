@@ -58,6 +58,7 @@ typedef struct VPPContext{
     mfxExtVPPRotation rotation_conf;
     mfxExtVPPMirroring mirroring_conf;
     mfxExtVPPScaling scale_conf;
+    mfxExtVPPVideoSignalInfo video_signal_info;
 
     int out_width;
     int out_height;
@@ -515,6 +516,18 @@ static int config_output(AVFilterLink *outlink)
             outlink->hw_frames_ctx = av_buffer_ref(inlink->hw_frames_ctx);
     }
 
+    if (param.out_sw_format == AV_PIX_FMT_BGRA) {
+
+        memset(&vpp->video_signal_info, 0, sizeof(mfxExtVPPVideoSignalInfo));
+        vpp->mirroring_conf.Header.BufferId = MFX_EXTBUFF_VPP_VIDEO_SIGNAL_INFO;
+        vpp->mirroring_conf.Header.BufferSz = sizeof(mfxExtVPPVideoSignalInfo);
+
+        vpp->video_signal_info.TransferMatrix = MFX_TRANSFERMATRIX_UNKNOWN;
+        vpp->video_signal_info.NominalRange = MFX_NOMINALRANGE_0_255;
+
+        param.ext_buf[param.num_ext_buf++] = (mfxExtBuffer*)&vpp->video_signal_info;
+    }
+
     return 0;
 }
 
@@ -604,6 +617,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NV12,
         AV_PIX_FMT_P010,
         AV_PIX_FMT_QSV,
+        AV_PIX_FMT_BGRA,
         AV_PIX_FMT_NONE
     };
 

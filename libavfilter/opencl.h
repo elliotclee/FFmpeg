@@ -24,6 +24,7 @@
 // we can't use the replacement clCreateCommandQueueWithProperties() because
 // it was introduced in OpenCL 2.0.
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
+#define CL_TARGET_OPENCL_VERSION 210
 
 #include "libavutil/bprint.h"
 #include "libavutil/buffer.h"
@@ -283,11 +284,26 @@ int ff_opencl_filter_work_size_from_image(AVFilterContext *avctx,
                                           AVFrame *frame, int plane,
                                           int block_alignment);
 /**
+ * Print an array into a buffer as __constant array, which could
+ * be included in an OpenCL program.
+*/
+
+void ff_opencl_print_const_array(AVBPrint *buf, const char *name_str,
+                                      float arr[], int len);
+
+/**
  * Print a 3x3 matrix into a buffer as __constant array, which could
  * be included in an OpenCL program.
 */
 
 void ff_opencl_print_const_matrix_3x3(AVBPrint *buf, const char *name_str,
+                                      double mat[3][3]);
+
+/**
+ * Print a 3x3 matrix into a buffer as __constant array of float3, which could
+ * be included in an OpenCL program.
+*/
+void ff_opencl_print_const_matrix_3xfloat3(AVBPrint *buf, const char *name_str,
                                       double mat[3][3]);
 
 /**

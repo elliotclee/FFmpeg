@@ -447,6 +447,11 @@ typedef struct AVPacketList {
  */
 #define AV_PKT_FLAG_DISPOSABLE 0x0010
 
+/**
+ * Flag is used to indicate that packets come from a segmented source.
+ */
+#define AV_PKT_FLAG_SEGMENT_SOURCE 0x100000
+
 enum AVSideDataParamChangeFlags {
 #if FF_API_OLD_CHANNEL_LAYOUT
     /**

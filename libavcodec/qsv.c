@@ -32,6 +32,7 @@
 #include "libavutil/hwcontext_qsv.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/avassert.h"
+#include "libavutil/opt.h"
 
 #include "avcodec.h"
 #include "qsv_internal.h"
@@ -371,6 +372,38 @@ load_plugin_fail:
 
 }
 
+static mfxIMPL choose_implementation(const char *device)
+{
+    static const struct {
+        const char *name;
+        mfxIMPL     impl;
+    } impl_map[] = {
+        { "auto",     MFX_IMPL_AUTO         },
+        { "sw",       MFX_IMPL_SOFTWARE     },
+        { "hw",       MFX_IMPL_HARDWARE     },
+        { "auto_any", MFX_IMPL_AUTO_ANY     },
+        { "hw_any",   MFX_IMPL_HARDWARE_ANY },
+        { "hw2",      MFX_IMPL_HARDWARE2    },
+        { "hw3",      MFX_IMPL_HARDWARE3    },
+        { "hw4",      MFX_IMPL_HARDWARE4    },
+    };
+
+    mfxIMPL impl = MFX_IMPL_AUTO_ANY;
+    int i;
+
+    if (device) {
+        for (i = 0; i < FF_ARRAY_ELEMS(impl_map); i++)
+            if (!strcmp(device, impl_map[i].name)) {
+                impl = impl_map[i].impl;
+                break;
+            }
+        if (i == FF_ARRAY_ELEMS(impl_map))
+            impl = strtol(device, NULL, 0);
+    }
+
+    return impl;
+}
+
 //This code is only required for Linux since a display handle is required.
 //For Windows the session is complete and ready to use.
 
@@ -407,13 +440,23 @@ static int ff_qsv_set_display_handle(AVCodecContext *avctx, QSVSession *qs)
 int ff_qsv_init_internal_session(AVCodecContext *avctx, QSVSession *qs,
                                  const char *load_plugins, int gpu_copy)
 {
-#if CONFIG_D3D11VA
-    mfxIMPL          impl = MFX_IMPL_AUTO_ANY | MFX_IMPL_VIA_D3D11;
-#else
-    mfxIMPL          impl = MFX_IMPL_AUTO_ANY;
-#endif
-    mfxVersion        ver = { { QSV_VERSION_MINOR, QSV_VERSION_MAJOR } };
+    const char *qsv_device = NULL;
+    int qsv_use_dx11;
+
+    av_opt_get_int(avctx, "qsv_use_dx11", AV_OPT_SEARCH_CHILDREN | AV_OPT_ALLOW_NULL, &qsv_use_dx11);
+    av_opt_get(avctx, "qsv_device", AV_OPT_SEARCH_CHILDREN | AV_OPT_ALLOW_NULL, (uint8_t**)&qsv_device);
+
+    if (qsv_device == NULL)
+        qsv_device = "hw_any";
+
+    mfxIMPL impl = choose_implementation(qsv_device);
+    mfxVersion ver = { { QSV_VERSION_MINOR, QSV_VERSION_MAJOR } };
     mfxInitParam init_par = { MFX_IMPL_AUTO_ANY };
+
+#if CONFIG_D3D11VA
+    if (qsv_use_dx11)
+        impl |= MFX_IMPL_VIA_D3D11;
+#endif
 
     const char *desc;
     int ret;
@@ -555,6 +598,9 @@ static mfxStatus qsv_frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *req,
     if (!(req->Type & (MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET |
                        MFX_MEMTYPE_VIDEO_MEMORY_PROCESSOR_TARGET))         ||
         !(req->Type & (MFX_MEMTYPE_FROM_DECODE | MFX_MEMTYPE_FROM_ENCODE)))
+        return MFX_ERR_UNSUPPORTED;
+
+    if (req->Info.FourCC == 41)
         return MFX_ERR_UNSUPPORTED;
 
     if (req->Type & MFX_MEMTYPE_EXTERNAL_FRAME) {
@@ -725,19 +771,24 @@ int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
                                AVBufferRef *device_ref, const char *load_plugins,
                                int gpu_copy)
 {
+    static const mfxHandleType handle_types[] = {
+        MFX_HANDLE_VA_DISPLAY,
+        MFX_HANDLE_D3D9_DEVICE_MANAGER,
+        MFX_HANDLE_D3D11_DEVICE,
+    };
     AVHWDeviceContext    *device_ctx = (AVHWDeviceContext*)device_ref->data;
     AVQSVDeviceContext *device_hwctx = device_ctx->hwctx;
     mfxSession        parent_session = device_hwctx->session;
     mfxInitParam            init_par = { MFX_IMPL_AUTO_ANY };
     mfxHDL                    handle = NULL;
-    int          hw_handle_supported = 0;
 
     mfxSession    session;
     mfxVersion    ver;
     mfxIMPL       impl;
     mfxHandleType handle_type;
     mfxStatus err;
-    int ret;
+
+    int i, ret;
 
     err = MFXQueryIMPL(parent_session, &impl);
     if (err == MFX_ERR_NONE)
@@ -746,23 +797,19 @@ int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
         return ff_qsv_print_error(avctx, err,
                                   "Error querying the session attributes");
 
-    if (MFX_IMPL_VIA_VAAPI == MFX_IMPL_VIA_MASK(impl)) {
-        handle_type = MFX_HANDLE_VA_DISPLAY;
-        hw_handle_supported = 1;
-    } else if (MFX_IMPL_VIA_D3D11 == MFX_IMPL_VIA_MASK(impl)) {
-        handle_type = MFX_HANDLE_D3D11_DEVICE;
-        hw_handle_supported = 1;
-    } else if (MFX_IMPL_VIA_D3D9 == MFX_IMPL_VIA_MASK(impl)) {
-        handle_type = MFX_HANDLE_D3D9_DEVICE_MANAGER;
-        hw_handle_supported = 1;
-    }
+    for (i = 0; i < FF_ARRAY_ELEMS(handle_types); i++) {
 
-    if (hw_handle_supported) {
-        err = MFXVideoCORE_GetHandle(parent_session, handle_type, &handle);
-        if (err != MFX_ERR_NONE) {
-            return ff_qsv_print_error(avctx, err,
-                                  "Error getting handle session");
+        if (MFX_IMPL_VIA(impl) == MFX_IMPL_VIA_D3D9 && handle_types[i] != MFX_HANDLE_D3D9_DEVICE_MANAGER)
+            continue;
+        if (MFX_IMPL_VIA(impl) == MFX_IMPL_VIA_D3D11 && handle_types[i] != MFX_HANDLE_D3D11_DEVICE)
+            continue;
+
+        err = MFXVideoCORE_GetHandle(parent_session, handle_types[i], &handle);
+        if (err == MFX_ERR_NONE) {
+            handle_type = handle_types[i];
+            break;
         }
+        handle = NULL;
     }
     if (!handle) {
         av_log(avctx, AV_LOG_VERBOSE, "No supported hw handle could be retrieved "

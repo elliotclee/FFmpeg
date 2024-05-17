@@ -2366,6 +2366,9 @@ static int hls_init_file_resend(AVFormatContext *s, VariantStream *vs)
     avio_write(vs->out, vs->init_buffer, vs->init_range_length);
     hlsenc_io_close(s, &vs->out, hls->fmp4_init_filename);
 
+    av_log(NULL, AV_LOG_INFO, "InitFileComplete, VariantStream=%d basename=%s filename=%s\n",
+        vs->number, vs->basename, av_basename(vs->base_output_dirname));
+
     return ret;
 }
 
@@ -2593,6 +2596,12 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
 
             if (use_temp_file)
                 hls_rename_temp_file(s, oc);
+
+            if (oc->url[0]) {
+                av_log(NULL, AV_LOG_INFO, "SegmentComplete=%s:%d Index=%d StartPts=%"PRId64" EndPts=%"PRId64" Duration=%f filename=%s\n",
+                    av_get_media_type_string(vs->streams[stream_index]->codecpar->codec_type),
+                    stream_index, vs->number, vs->start_pts, vs->end_pts, vs->duration, av_basename(oc->url));
+            }
         }
 
         old_filename = av_strdup(oc->url);
@@ -3035,6 +3044,10 @@ static int hls_init(AVFormatContext *s)
                 }
 
                 p = strrchr(vs->m3u8_name, '/');
+#if HAVE_DOS_PATHS
+                p = FFMAX(p, strrchr(vs->m3u8_name, '\\'));
+#endif
+
                 if (p) {
                     char tmp = *(++p);
                     *p = '\0';

@@ -543,7 +543,7 @@ static av_cold int gif_decode_close(AVCodecContext *avctx)
 static const AVOption options[] = {
     { "trans_color", "color value (ARGB) that is used instead of transparent color",
       offsetof(GifState, trans_color), AV_OPT_TYPE_INT,
-      {.i64 = GIF_TRANSPARENT_COLOR}, 0, 0xffffffff,
+      {.i64 = GIF_TRANSPARENT_COLOR}, 0, INT_MAX,
       AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_VIDEO_PARAM },
     { NULL },
 };

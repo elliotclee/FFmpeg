@@ -231,13 +231,24 @@ static int process_frame(FFFrameSync *fs)
 {
     AVFilterContext  *ctx = fs->parent;
     QSVOverlayContext  *s = fs->opaque;
+    AVFrame       *frame0 = NULL;
     AVFrame        *frame = NULL;
-    int               ret = 0, i;
+    int               ret = 0;
 
-    for (i = 0; i < ctx->nb_inputs; i++) {
+    for (unsigned i = 0; i < ctx->nb_inputs; i++) {
         ret = ff_framesync_get_frame(fs, i, &frame, 0);
-        if (ret == 0)
-            ret = ff_qsvvpp_filter_frame(s->qsv, ctx->inputs[i], frame);
+
+        if (ret == 0) {
+            if (i == 0)
+                frame0 = frame;
+            else {
+                av_frame_remove_all_side_data(frame);
+                ret = av_frame_copy_side_data(frame, frame0, 0);
+            }
+
+            ret = ret < 0 ? ret : ff_qsvvpp_filter_frame(s->qsv, ctx->inputs[i], frame);
+        }
+
         if (ret < 0 && ret != AVERROR(EAGAIN))
             break;
     }
@@ -284,16 +295,16 @@ static int config_output(AVFilterLink *outlink)
         AVHWFramesContext *hw_frame0 = (AVHWFramesContext *)in0->hw_frames_ctx->data;
         AVHWFramesContext *hw_frame1 = (AVHWFramesContext *)in1->hw_frames_ctx->data;
 
-        if (hw_frame0->device_ctx != hw_frame1->device_ctx) {
-            av_log(ctx, AV_LOG_ERROR, "Inputs with different underlying QSV devices are forbidden.\n");
-            return AVERROR(EINVAL);
-        }
+        ////if (hw_frame0->device_ctx != hw_frame1->device_ctx) {
+        ////    av_log(ctx, AV_LOG_ERROR, "Inputs with different underlying QSV devices are forbidden.\n");
+        ////    return AVERROR(EINVAL);
+        ////}
     }
 
     outlink->w          = vpp->var_values[VAR_MW];
     outlink->h          = vpp->var_values[VAR_MH];
     outlink->frame_rate = in0->frame_rate;
-    outlink->time_base  = av_inv_q(outlink->frame_rate);
+    outlink->time_base  = in0->time_base; // av_inv_q(outlink->frame_rate);
 
     ret = init_framesync(ctx);
     if (ret < 0)

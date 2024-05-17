@@ -21,6 +21,8 @@
 
 #include <mfx/mfxvideo.h>
 
+#define MFX_IMPL_VIA(x) (0x0f00 & (x))
+
 /**
  * @file
  * An API-specific header for AV_HWDEVICE_TYPE_QSV.
@@ -47,6 +49,7 @@ typedef struct AVQSVFramesContext {
      * A combination of MFX_MEMTYPE_* describing the frame pool.
      */
     int frame_type;
+    AVHWFramesContext *child_frames_ctx;
 } AVQSVFramesContext;
 
 #endif /* AVUTIL_HWCONTEXT_QSV_H */

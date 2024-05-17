@@ -309,6 +309,8 @@ static int filter_link_check_formats(void *log, AVFilterLink *link, AVFilterForm
             return ret;
         break;
 
+    case AVMEDIA_TYPE_SUBTITLE:
+        return 0;
     default:
         av_assert0(!"reached");
     }
@@ -393,6 +395,14 @@ static int formats_declared(AVFilterContext *f)
     return 1;
 }
 
+int avfilter_query_formats(AVFilterContext *filter)
+{
+    if (filter->filter->formats_state == FF_FILTER_FORMATS_QUERY_FUNC)
+        return filter_query_formats(filter);
+
+    return ff_default_query_formats(filter);
+}
+
 /**
  * Perform one round of query_formats() and merging formats lists on the
  * filter graph.
@@ -416,10 +426,7 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
         AVFilterContext *f = graph->filters[i];
         if (formats_declared(f))
             continue;
-        if (f->filter->formats_state == FF_FILTER_FORMATS_QUERY_FUNC)
-            ret = filter_query_formats(f);
-        else
-            ret = ff_default_query_formats(f);
+        ret = ff_filter_query_formats(f);
         if (ret < 0 && ret != AVERROR(EAGAIN))
             return ret;
         /* note: EAGAIN could indicate a partial success, not counted yet */
@@ -437,6 +444,9 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
             int convert_needed = 0;
 
             if (!link)
+                continue;
+
+            if (link->type == AVMEDIA_TYPE_SUBTITLE)
                 continue;
 
             neg = ff_filter_get_negotiation(link);
@@ -1350,3 +1360,12 @@ int ff_filter_graph_run_once(AVFilterGraph *graph)
         return AVERROR(EAGAIN);
     return ff_filter_activate(filter);
 }
+
+int ff_filter_query_formats(AVFilterContext *filter)
+{
+    if (filter->filter->formats_state == FF_FILTER_FORMATS_QUERY_FUNC)
+        return filter_query_formats(filter);
+
+    return ff_default_query_formats(filter);
+}
+

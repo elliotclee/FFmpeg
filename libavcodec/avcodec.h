@@ -35,6 +35,7 @@
 #include "libavutil/frame.h"
 #include "libavutil/log.h"
 #include "libavutil/pixfmt.h"
+#include "libavutil/subfmt.h"
 #include "libavutil/rational.h"
 
 #include "codec.h"
@@ -1696,7 +1697,7 @@ typedef struct AVCodecContext {
 
     /**
      * Header containing style information for text subtitles.
-     * For SUBTITLE_ASS subtitle type, it should contain the whole ASS
+     * For AV_SUBTITLE_FMT_ASS subtitle type, it should contain the whole ASS
      * [Script Info] and [V4+ Styles] section, plus the [Events] line and
      * the Format line following. It shouldn't include any Dialogue line.
      * - encoding: Set/allocated/freed by user (before avcodec_open2())
@@ -2054,6 +2055,8 @@ typedef struct AVCodecContext {
      *             The decoder can then override during decoding as needed.
      */
     AVChannelLayout ch_layout;
+
+    enum AVSubtitleType subtitle_type;
 } AVCodecContext;
 
 /**
@@ -2251,26 +2254,24 @@ typedef struct AVHWAccel {
 #define AV_HWACCEL_FLAG_ALLOW_PROFILE_MISMATCH (1 << 2)
 
 /**
+ * Some hardware decoders (namely nvdec) can either output direct decoder
+ * surfaces, or make an on-device copy and return said copy.
+ * There is a hard limit on how many decoder surfaces there can be, and it
+ * cannot be accurately guessed ahead of time.
+ * For some processing chains, this can be okay, but others will run into the
+ * limit and in turn produce very confusing errors that require fine tuning of
+ * more or less obscure options by the user, or in extreme cases cannot be
+ * resolved at all without inserting an avfilter that forces a copy.
+ *
+ * Thus, the hwaccel will by default make a copy for safety and resilience.
+ * If a users really wants to minimize the amount of copies, they can set this
+ * flag and ensure their processing chain does not exhaust the surface pool.
+ */
+#define AV_HWACCEL_FLAG_UNSAFE_OUTPUT (1 << 3)
+
+/**
  * @}
  */
-
-enum AVSubtitleType {
-    SUBTITLE_NONE,
-
-    SUBTITLE_BITMAP,                ///< A bitmap, pict will be set
-
-    /**
-     * Plain text, the text field must be set by the decoder and is
-     * authoritative. ass and pict fields may contain approximations.
-     */
-    SUBTITLE_TEXT,
-
-    /**
-     * Formatted text, the ass field must be set by the decoder and is
-     * authoritative. pict and text fields may contain approximations.
-     */
-    SUBTITLE_ASS,
-};
 
 #define AV_SUBTITLE_FLAG_FORCED 0x00000001
 
@@ -2448,7 +2449,10 @@ int avcodec_close(AVCodecContext *avctx);
  * Free all allocated data in the given subtitle struct.
  *
  * @param sub AVSubtitle to free.
+ *
+ * @deprecated Use the regular frame based encode and decode APIs instead.
  */
+attribute_deprecated
 void avsubtitle_free(AVSubtitle *sub);
 
 /**
@@ -2541,7 +2545,10 @@ enum AVChromaLocation avcodec_chroma_pos_to_enum(int xpos, int ypos);
  *                 must be freed with avsubtitle_free if *got_sub_ptr is set.
  * @param[in,out] got_sub_ptr Zero if no subtitle could be decompressed, otherwise, it is nonzero.
  * @param[in] avpkt The input AVPacket containing the input buffer.
+ *
+ * @deprecated Use the new decode API (avcodec_send_packet, avcodec_receive_frame) instead.
  */
+attribute_deprecated
 int avcodec_decode_subtitle2(AVCodecContext *avctx, AVSubtitle *sub,
                             int *got_sub_ptr,
                             AVPacket *avpkt);
@@ -3022,9 +3029,12 @@ void av_parser_close(AVCodecParserContext *s);
  * @{
  */
 
+ /**
+  * @deprecated Use @ref avcodec_encode_subtitle2() instead.
+  */
+attribute_deprecated
 int avcodec_encode_subtitle(AVCodecContext *avctx, uint8_t *buf, int buf_size,
                             const AVSubtitle *sub);
-
 
 /**
  * @}

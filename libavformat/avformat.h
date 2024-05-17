@@ -1323,6 +1323,17 @@ typedef struct AVFormatContext {
      */
     int64_t bit_rate;
 
+    // Emby Custom
+    /**
+     * Current position when using the skip_interval or skip_list option
+     * AV_TIME_BASE fractional seconds. 
+     *
+     * Demuxing only.
+     */
+    int64_t skip_position;
+    int64_t skip_last_output;
+    int skip_index;
+
     unsigned int packet_size;
     int max_delay;
 
@@ -1355,6 +1366,8 @@ typedef struct AVFormatContext {
 #define AVFMT_FLAG_FAST_SEEK   0x80000 ///< Enable fast, but inaccurate seeks for some formats
 #define AVFMT_FLAG_SHORTEST   0x100000 ///< Stop muxing when the shortest stream stops.
 #define AVFMT_FLAG_AUTO_BSF   0x200000 ///< Add bitstream filters as requested by the muxer
+#define AVFMT_FLAG_DISCARD_CORRUPT_TS 0x400000 ///< Discard timestamps of frames marked corrupt
+#define AVFMT_FLAG_FILL_WALLCLOCK_DTS 0x800000 ///< Fill missing or discarded DTS values from wallclock (for live streams)
 
     /**
      * Maximum number of bytes read from input in order to determine stream

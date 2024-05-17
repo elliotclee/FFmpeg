@@ -210,6 +210,10 @@ typedef struct AVCodecParameters {
      * Audio only. The channel layout and number of channels.
      */
     AVChannelLayout ch_layout;
+    /**
+     * Codec properties of the stream that gets decoded
+     */
+    unsigned properties;
 } AVCodecParameters;
 
 /**

@@ -157,22 +157,29 @@ double ff_determine_signal_peak(AVFrame *in)
 
     if (sd) {
         AVContentLightMetadata *clm = (AVContentLightMetadata *)sd->data;
-        peak = clm->MaxCLL / REFERENCE_WHITE;
+        if (clm->MaxCLL > 0) {
+            peak = (double)clm->MaxCLL;
+            av_log(NULL, AV_LOG_DEBUG, "Setting peak from MaxCLL side data: %f\n", peak);
+            return peak / REFERENCE_WHITE;
+        }
     }
 
     sd = av_frame_get_side_data(in, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
-    if (!peak && sd) {
+    if (peak < 1e-6 && sd) {
         AVMasteringDisplayMetadata *metadata = (AVMasteringDisplayMetadata *)sd->data;
-        if (metadata->has_luminance)
-            peak = av_q2d(metadata->max_luminance) / REFERENCE_WHITE;
+        if (metadata->has_luminance && metadata->max_luminance.num > 0) {
+            peak = metadata->max_luminance.num > metadata->max_luminance.den ? av_q2d(metadata->max_luminance) : metadata->max_luminance.num;
+            av_log(NULL, AV_LOG_DEBUG, "Setting peak from MasteringDisplayMetadata: %f\n", peak);
+            return peak / REFERENCE_WHITE;
+        }
     }
 
     // For untagged source, use peak of 10000 if SMPTE ST.2084
     // otherwise assume HLG with reference display peak 1000.
-    if (!peak)
-        peak = in->color_trc == AVCOL_TRC_SMPTE2084 ? 100.0f : 10.0f;
+    peak = in->color_trc == AVCOL_TRC_SMPTE2084 ? 10000.0 : 1000.0;
+    av_log(NULL, AV_LOG_DEBUG, "Setting default peak value: %f\n", peak);
 
-    return peak;
+    return peak / REFERENCE_WHITE;
 }
 
 void ff_update_hdr_metadata(AVFrame *in, double peak)

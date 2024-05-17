@@ -165,7 +165,9 @@ static int init_out_pool(AVFilterContext *ctx,
     AVQSVFramesContext *out_frames_hwctx;
     enum AVPixelFormat in_format;
     enum AVPixelFormat out_format;
+    int height_align_adjust = 0;
     int i, ret;
+
 
     /* check that we have a hw context */
     if (!ctx->inputs[0]->hw_frames_ctx) {
@@ -176,6 +178,7 @@ static int init_out_pool(AVFilterContext *ctx,
     in_frames_hwctx = in_frames_ctx->hwctx;
 
     in_format     = in_frames_ctx->sw_format;
+    in_format     = in_frames_ctx->sw_format;
     out_format    = (s->format == AV_PIX_FMT_NONE) ? in_format : s->format;
 
     outlink->hw_frames_ctx = av_hwframe_ctx_alloc(in_frames_ctx->device_ref);
@@ -184,9 +187,13 @@ static int init_out_pool(AVFilterContext *ctx,
     out_frames_ctx   = (AVHWFramesContext*)outlink->hw_frames_ctx->data;
     out_frames_hwctx = out_frames_ctx->hwctx;
 
+    /* work around a bug in MSDK where VPP processing hangs under certain conditions */
+    if (in_frames_ctx->height == out_height)
+        height_align_adjust = 1;
+
     out_frames_ctx->format            = AV_PIX_FMT_QSV;
     out_frames_ctx->width             = FFALIGN(out_width,  16);
-    out_frames_ctx->height            = FFALIGN(out_height, 16);
+    out_frames_ctx->height            = FFALIGN(out_height + height_align_adjust, 16);
     out_frames_ctx->sw_format         = out_format;
     out_frames_ctx->initial_pool_size = 4;
 

@@ -31,6 +31,7 @@
 #include "avformat.h"
 #include "internal.h"
 #include "mux.h"
+#include "url.h"
 
 #include "libavutil/avassert.h"
 #include "libavutil/internal.h"
@@ -76,6 +77,7 @@ typedef struct SegmentContext {
     const AVOutputFormat *oformat;
     AVFormatContext *avf;
     char *format;              ///< format to use for output segment files
+    char *format_options_str;  ///< format options to use for output segment files
     AVDictionary *format_options;
     char *list;            ///< filename for the segment list file
     int   list_flags;      ///< flags affecting list generation
@@ -118,7 +120,12 @@ typedef struct SegmentContext {
     int   break_non_keyframes;
     int   write_empty;
 
+    int segment_limit;       ///< max number of segments to create
+    int64_t drop_partial_offset;    ///< relative time offset until which partial end segments will be droppedrelative time offset until which partial end segments will be dropped
+
+    int segment_write_temp; ///< write segments as temp files and rename on completion
     int use_rename;
+    int64_t min_frame_time;    ///< minimum timestamp time for frames, expressed in microseconds
     char temp_list_filename[1024];
 
     SegmentListEntry cur_entry;
@@ -193,6 +200,7 @@ static int set_segment_filename(AVFormatContext *s)
     int ret;
     char buf[1024];
     char *new_name;
+    char *temp_name;
 
     if (seg->segment_idx_wrap)
         seg->segment_idx %= seg->segment_idx_wrap;
@@ -225,6 +233,13 @@ static int set_segment_filename(AVFormatContext *s)
     snprintf(seg->cur_entry.filename, size, "%s%s",
              seg->entry_prefix ? seg->entry_prefix : "",
              av_basename(oc->url));
+
+    // Write segment as a temp file and rename on completion
+    if(seg->segment_write_temp) {
+        av_strlcatf(buf, sizeof(buf), ".tmp");
+        temp_name = av_strdup(buf);
+        ff_format_set_url(oc, temp_name);
+    }
 
     return 0;
 }
@@ -356,6 +371,9 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
     int i;
     int err;
 
+    if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+        return 0;
+
     if (!oc || !oc->pb)
         return AVERROR(EINVAL);
 
@@ -407,8 +425,8 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
         }
     }
 
-    av_log(s, AV_LOG_VERBOSE, "segment:'%s' count:%d ended\n",
-           seg->avf->url, seg->segment_count);
+    ////av_log(s, AV_LOG_VERBOSE, "segment:'%s' count:%d ended\n",
+    ////       seg->avf->url, seg->segment_count);
     seg->segment_count++;
 
     if (seg->increment_tc) {
@@ -452,6 +470,33 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
 
 end:
     ff_format_io_close(oc, &oc->pb);
+
+    // Now rename the temporary file.
+    if (seg->segment_write_temp) {
+
+        double drop_offset = av_q2d(AV_TIME_BASE_Q) * seg->drop_partial_offset;
+        if (is_last && seg->drop_partial_offset != AV_NOPTS_VALUE && seg->cur_entry.start_time < drop_offset) {
+            av_log(s, AV_LOG_INFO, "Deleting temp segment. Segment start (%f) < drop offset (%f) File: %s\n",
+                seg->cur_entry.start_time,  drop_offset, oc->url);
+
+            ret = ffurl_delete(oc->url);
+            if (ret < 0)
+                av_log(s, AV_LOG_WARNING, "Unable to delete temp segment file (%d): %s\n", ret, oc->url);
+
+            return 0;
+        }
+
+        char* final_filename = av_strdup(oc->url);
+        final_filename[strlen(final_filename)-4] = '\0';
+        ff_rename(oc->url, final_filename, s);
+        av_free(final_filename);
+    }
+
+    av_log(NULL, AV_LOG_INFO, "SegmentComplete=%s:%d Index=%d Start=%f End=%f Duration=%f offset_pts=%s start_pts=%s Frames=%d filename=%s\n",
+        av_get_media_type_string(s->streams[seg->reference_stream_index]->codecpar->codec_type),
+        seg->reference_stream_index, seg->segment_idx, seg->cur_entry.start_time, seg->cur_entry.end_time, 
+        seg->cur_entry.end_time - seg->cur_entry.start_time, av_ts2str(seg->cur_entry.offset_pts), av_ts2str(seg->cur_entry.start_pts),
+        seg->segment_frame_count, seg->cur_entry.filename);
 
     return ret;
 }
@@ -656,6 +701,7 @@ static void seg_free(AVFormatContext *s)
         avformat_free_context(seg->avf);
         seg->avf = NULL;
     }
+    seg->avf = NULL;
     av_freep(&seg->times);
     av_freep(&seg->frames);
     av_freep(&seg->cur_entry.filename);
@@ -686,10 +732,10 @@ static int seg_init(AVFormatContext *s)
         seg->individual_header_trailer = 0;
     }
 
-    if (seg->initial_offset > 0) {
-        av_log(s, AV_LOG_WARNING, "NOTE: the option initial_offset is deprecated,"
-               "you can use output_ts_offset instead of it\n");
-    }
+    //if (seg->initial_offset > 0) {
+    //    av_log(s, AV_LOG_WARNING, "NOTE: the option initial_offset is deprecated,"
+    //           "you can use output_ts_offset instead of it\n");
+    //}
 
     if ((seg->time != 2000000) + !!seg->times_str + !!seg->frames_str > 1) {
         av_log(s, AV_LOG_ERROR,
@@ -711,6 +757,15 @@ static int seg_init(AVFormatContext *s)
                 return AVERROR(EINVAL);
             }
             seg->clocktime_offset = seg->time - (seg->clocktime_offset % seg->time);
+        }
+    }
+
+    if (seg->format_options_str) {
+        ret = av_dict_parse_string(&seg->format_options, seg->format_options_str, "=", ":", 0);
+        if (ret < 0) {
+            av_log(s, AV_LOG_ERROR, "Could not parse format options list '%s'\n",
+                   seg->format_options_str);
+            return ret;
         }
     }
 
@@ -777,7 +832,7 @@ static int seg_init(AVFormatContext *s)
     ret = avformat_init_output(oc, &options);
     if (av_dict_count(options)) {
         av_log(s, AV_LOG_ERROR,
-               "Some of the provided format options are not recognized\n");
+               "Some of the provided format options in '%s' are not recognized\n", seg->format_options_str);
         av_dict_free(&options);
         return AVERROR(EINVAL);
     }
@@ -841,12 +896,16 @@ static int seg_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     SegmentContext *seg = s->priv_data;
     AVStream *st = s->streams[pkt->stream_index];
+    AVCodecParameters *codec_par;
     int64_t end_pts = INT64_MAX, offset;
     int start_frame = INT_MAX;
     int ret;
     struct tm ti;
     int64_t usecs;
     int64_t wrapped_val;
+
+    if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+        return 0;
 
     if (!seg->avf || !seg->avf->pb)
         return AVERROR(EINVAL);
@@ -861,10 +920,31 @@ static int seg_write_packet(AVFormatContext *s, AVPacket *pkt)
                 goto calc_times;
             }
             memcpy(st->codecpar->extradata, pkt_extradata, pkt_extradata_size);
+            //st->codecpar->extradata_size = pkt_extradata_size;
         }
     }
 
+    codec_par = seg->avf->streams[st->index]->codecpar;
+
+    if (st->codecpar->extradata_size > 0 && codec_par->extradata_size != st->codecpar->extradata_size) {
+        av_log(s, AV_LOG_DEBUG, "Update segment stream extra data (size %d) from output stream extra data (size %d).\n",
+            codec_par->extradata_size, st->codecpar->extradata_size);
+
+        ret = ff_alloc_extradata(codec_par, st->codecpar->extradata_size);
+        if (ret < 0) {
+            av_log(s, AV_LOG_WARNING, "Unable to add extradata to output parameters. Output segments may be invalid.\n");
+            goto calc_times;
+        }
+        memcpy(codec_par->extradata, st->codecpar->extradata, st->codecpar->extradata_size);
+        //codec_par->extradata_size = st->codecpar->extradata_size;
+    }
+
 calc_times:
+    ////if (pkt->stream_index == seg->reference_stream_index &&
+    ////    (pkt->flags & AV_PKT_FLAG_KEY || seg->break_non_keyframes) &&
+    ////    pkt->pts != AV_NOPTS_VALUE && seg->min_frame_time == -INT64_MAX)
+    ////    seg->min_frame_time = av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q);
+
     if (seg->times) {
         end_pts = seg->segment_count < seg->nb_times ?
             seg->times[seg->segment_count] : INT64_MAX;
@@ -882,7 +962,7 @@ calc_times:
                 seg->cut_pending = 1;
             seg->last_val = wrapped_val;
         } else {
-            end_pts = seg->time * (seg->segment_count + 1);
+            end_pts = seg->time * (seg->segment_count + 1) + seg->min_frame_time;
         }
     }
 
@@ -905,6 +985,9 @@ calc_times:
 
         if ((ret = segment_end(s, seg->individual_header_trailer, 0)) < 0)
             goto fail;
+
+        if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+            return 0;
 
         if ((ret = segment_start(s, seg->individual_header_trailer)) < 0)
             goto fail;
@@ -945,6 +1028,9 @@ calc_times:
         pkt->pts += offset;
     if (pkt->dts != AV_NOPTS_VALUE)
         pkt->dts += offset;
+
+    // Emby custom: Just for logging output
+    seg->cur_entry.offset_pts = av_rescale_q(offset, st->time_base, AV_TIME_BASE_Q);
 
     av_log(s, AV_LOG_DEBUG, " -> pts:%s pts_time:%s dts:%s dts_time:%s\n",
            av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &st->time_base),
@@ -1010,7 +1096,7 @@ static int seg_check_bitstream(AVFormatContext *s, AVStream *st,
 static const AVOption options[] = {
     { "reference_stream",  "set reference stream", OFFSET(reference_stream_specifier), AV_OPT_TYPE_STRING, {.str = "auto"}, 0, 0, E },
     { "segment_format",    "set container format used for the segments", OFFSET(format),  AV_OPT_TYPE_STRING, {.str = NULL},  0, 0,       E },
-    { "segment_format_options", "set list of options for the container format used for the segments", OFFSET(format_options), AV_OPT_TYPE_DICT, {.str = NULL}, 0, 0, E },
+    { "segment_format_options", "set list of options for the container format used for the segments", OFFSET(format_options_str), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, E },
     { "segment_list",      "set the segment list filename",              OFFSET(list),    AV_OPT_TYPE_STRING, {.str = NULL},  0, 0,       E },
     { "segment_header_filename", "write a single file containing the header", OFFSET(header_filename), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, E },
 
@@ -1032,7 +1118,7 @@ static const AVOption options[] = {
     { "segment_clocktime_offset", "set segment clocktime offset",        OFFSET(clocktime_offset), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, 86400000000LL, E},
     { "segment_clocktime_wrap_duration", "set segment clocktime wrapping duration", OFFSET(clocktime_wrap_duration), AV_OPT_TYPE_DURATION, {.i64 = INT64_MAX}, 0, INT64_MAX, E},
     { "segment_time",      "set segment duration",                       OFFSET(time),AV_OPT_TYPE_DURATION, {.i64 = 2000000}, INT64_MIN, INT64_MAX,       E },
-    { "segment_time_delta","set approximation value used for the segment times", OFFSET(time_delta), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, INT64_MAX, E },
+    { "segment_time_delta","set approximation value used for the segment times", OFFSET(time_delta), AV_OPT_TYPE_DURATION, {.i64 = 0}, INT64_MIN, INT64_MAX, E },
     { "segment_times",     "set segment split time points",              OFFSET(times_str),AV_OPT_TYPE_STRING,{.str = NULL},  0, 0,       E },
     { "segment_frames",    "set segment split frame numbers",            OFFSET(frames_str),AV_OPT_TYPE_STRING,{.str = NULL},  0, 0,       E },
     { "segment_wrap",      "set number after which the index wraps",     OFFSET(segment_idx_wrap), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, E },
@@ -1048,6 +1134,10 @@ static const AVOption options[] = {
     { "reset_timestamps", "reset timestamps at the beginning of each segment", OFFSET(reset_timestamps), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
     { "initial_offset", "set initial timestamp offset", OFFSET(initial_offset), AV_OPT_TYPE_DURATION, {.i64 = 0}, -INT64_MAX, INT64_MAX, E },
     { "write_empty_segments", "allow writing empty 'filler' segments", OFFSET(write_empty), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
+    { "segment_write_temp", "write segments as temp files and rename on completion", OFFSET(segment_write_temp), AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E }, 
+    { "segment_limit", "stop output once the specified number of segments has been written", OFFSET(segment_limit), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, E },
+    { "drop_partial_offset", "relative time offset until which partial end segments will be dropped", OFFSET(drop_partial_offset), AV_OPT_TYPE_DURATION, {.i64 = AV_NOPTS_VALUE}, -INT64_MAX, INT64_MAX, E },
+    { "min_frame_time", "drop any frames earlier", OFFSET(min_frame_time), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, INT64_MAX, E },
     { NULL },
 };
 

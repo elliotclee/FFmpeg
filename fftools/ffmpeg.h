@@ -119,6 +119,9 @@ typedef struct OptionsContext {
     int accurate_seek;
     int thread_queue_size;
     int input_sync_ref;
+    // Emby Custom
+    int64_t skip_interval;
+    char* skip_list_str;
 
     SpecifierOpt *ts_scale;
     int        nb_ts_scale;
@@ -354,17 +357,16 @@ typedef struct InputStream {
     struct { /* previous decoded subtitle and related variables */
         int got_output;
         int ret;
-        AVSubtitle subtitle;
+        AVFrame *subtitle;
     } prev_sub;
 
-    struct sub2video {
+    struct subtitle_kickoff {
+        int is_active;
         int64_t last_pts;
-        int64_t end_pts;
-        AVFifo *sub_queue;    ///< queue of AVSubtitle* before filter init
-        AVFrame *frame;
         int w, h;
-        unsigned int initialize; ///< marks if sub2video_update should force an initialization
-    } sub2video;
+    } subtitle_kickoff;
+
+    AVBufferRef *subtitle_header;
 
     /* decoded data from this stream goes into all those filters
      * currently video and audio only */
@@ -423,6 +425,10 @@ typedef struct InputFile {
     int rate_emu;
     float readrate;
     int accurate_seek;
+    // Emby Custom
+    int64_t skip_interval; /* interval to skip after each packet read */
+    int64_t *skip_times;   /* list of skip times */
+    int nb_skip_times;     /* number of elments in the skip times array */
 
     AVPacket *pkt;
 
@@ -470,6 +476,8 @@ typedef struct OutputStream {
     int64_t first_pts;
     /* dts of the last packet sent to the muxer */
     int64_t last_mux_dts;
+    /* subtitle_pts values of the last subtitle frame having arrived for encoding */
+    int64_t last_subtitle_pts;
     // the timebase of the packets sent to the muxer
     AVRational mux_timebase;
     AVRational enc_timebase;
@@ -646,6 +654,9 @@ extern float max_error_rate;
 extern char *filter_nbthreads;
 extern int filter_complex_nbthreads;
 extern int vstats_version;
+extern int print_graphs;
+extern char* print_graphs_file;
+extern char* print_graphs_format;
 extern int auto_conversion_filters;
 
 extern const AVIOInterruptCB int_cb;
@@ -653,6 +664,9 @@ extern const AVIOInterruptCB int_cb;
 extern const OptionDef options[];
 #if CONFIG_QSV
 extern char *qsv_device;
+#if CONFIG_D3D11VA
+extern int qsv_use_dx11;
+#endif
 #endif
 extern HWDevice *filter_hw_device;
 
@@ -660,6 +674,9 @@ extern int want_sdp;
 extern unsigned nb_output_dumped;
 extern int main_return_code;
 
+// Emby Custom
+extern int throttleMs;
+// Emby End
 
 void term_init(void);
 void term_exit(void);
@@ -676,8 +693,6 @@ void check_filter_outputs(void);
 int filtergraph_is_simple(FilterGraph *fg);
 int init_simple_filtergraph(InputStream *ist, OutputStream *ost);
 int init_complex_filtergraph(FilterGraph *fg);
-
-void sub2video_update(InputStream *ist, int64_t heartbeat_pts, AVSubtitle *sub);
 
 int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *frame);
 

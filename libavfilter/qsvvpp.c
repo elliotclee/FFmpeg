@@ -302,6 +302,14 @@ static int fill_frameinfo_by_link(mfxFrameInfo *frameinfo, AVFilterLink *link)
     frameinfo->CropH          = link->h;
     frameinfo->FrameRateExtN  = link->frame_rate.num;
     frameinfo->FrameRateExtD  = link->frame_rate.den;
+
+    /* Apparently VPP in the SDK requires the frame rate to be set to some value, otherwise
+     * init will fail */
+    if (frameinfo->FrameRateExtD == 0 || frameinfo->FrameRateExtN == 0) {
+        frameinfo->FrameRateExtN = 25;
+        frameinfo->FrameRateExtD = 1;
+    }
+
     frameinfo->AspectRatioW   = link->sample_aspect_ratio.num ? link->sample_aspect_ratio.num : 1;
     frameinfo->AspectRatioH   = link->sample_aspect_ratio.den ? link->sample_aspect_ratio.den : 1;
 
@@ -494,6 +502,7 @@ static int init_vpp_session(AVFilterContext *avctx, QSVVPPContext *s)
     mfxHandleType handle_type;
     mfxVersion ver;
     mfxIMPL impl;
+    int height_align_adjust = 0;
     int ret, i;
 
     if (inlink->hw_frames_ctx) {
@@ -537,9 +546,13 @@ static int init_vpp_session(AVFilterContext *avctx, QSVVPPContext *s)
         out_frames_ctx   = (AVHWFramesContext *)out_frames_ref->data;
         out_frames_hwctx = out_frames_ctx->hwctx;
 
+        /* work around a bug in MSDK where VPP processing hangs under certain conditions */
+        if (inlink->h == outlink->h)
+            height_align_adjust = 1;
+
         out_frames_ctx->format            = AV_PIX_FMT_QSV;
         out_frames_ctx->width             = FFALIGN(outlink->w, 32);
-        out_frames_ctx->height            = FFALIGN(outlink->h, 32);
+        out_frames_ctx->height            = FFALIGN(outlink->h + height_align_adjust, 32);
         out_frames_ctx->sw_format         = s->out_sw_format;
         out_frames_ctx->initial_pool_size = 64;
         if (avctx->extra_hw_frames > 0)
@@ -843,6 +856,12 @@ int ff_qsvvpp_filter_frame(QSVVPPContext *s, AVFilterLink *inlink, AVFrame *picr
                 return AVERROR(EAGAIN);
             break;
         }
+
+        av_frame_remove_all_side_data(out_frame->frame);
+        ret = av_frame_copy_side_data(out_frame->frame, in_frame->frame, 0);
+        if (ret < 0)
+            return ret;
+
         out_frame->frame->pts = av_rescale_q(out_frame->surface.Data.TimeStamp,
                                              default_tb, outlink->time_base);
 

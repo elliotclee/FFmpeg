@@ -112,6 +112,7 @@ int avcodec_parameters_from_context(AVCodecParameters *par,
     par->bits_per_raw_sample   = codec->bits_per_raw_sample;
     par->profile               = codec->profile;
     par->level                 = codec->level;
+    par->properties            = codec->properties;
 
     switch (par->codec_type) {
     case AVMEDIA_TYPE_VIDEO:
@@ -193,6 +194,7 @@ int avcodec_parameters_to_context(AVCodecContext *codec,
     codec->bits_per_raw_sample   = par->bits_per_raw_sample;
     codec->profile               = par->profile;
     codec->level                 = par->level;
+    codec->properties            = par->properties;
 
     switch (par->codec_type) {
     case AVMEDIA_TYPE_VIDEO:

@@ -24,6 +24,7 @@
 #define COMPAT_CUDA_CUDA_RUNTIME_H
 
 // Common macros
+#define __constant__ __attribute__((constant))
 #define __global__ __attribute__((global))
 #define __device__ __attribute__((device))
 #define __device_builtin__ __attribute__((device_builtin))
@@ -33,6 +34,7 @@
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define abs(x) ((x) < 0 ? -(x) : (x))
+#define clamp(a, b, c) min(max((a), (b)), (c))
 
 #define atomicAdd(a, b) (__atomic_fetch_add(a, b, __ATOMIC_SEQ_CST))
 
@@ -80,6 +82,30 @@ typedef struct __device_builtin__ __align__(16) int4
 {
     int x, y, z, w;
 } int4;
+
+typedef struct __attribute__((device_builtin)) ushort3 {
+  unsigned short x, y, z;
+} ushort3;
+static __inline__ __attribute__((always_inline)) __attribute__((device)) ushort3
+make_ushort3(unsigned short x, unsigned short y, unsigned short z) {
+  ushort3 ret;
+  ret.x = x;
+  ret.y = y;
+  ret.z = z;
+  return ret;
+}
+
+typedef struct __attribute__((device_builtin)) float3 {
+  float x, y, z;
+} float3;
+static __inline__ __attribute__((always_inline)) __attribute__((device)) float3
+make_float3(float x, float y, float z) {
+  float3 ret;
+  ret.x = x;
+  ret.y = y;
+  ret.z = z;
+  return ret;
+}
 
 typedef struct __device_builtin__ __align__(16) float4
 {
@@ -168,6 +194,14 @@ inline __device__ float2 tex2D<float2>(cudaTextureObject_t texObject, float x, f
     return make_float2(ret.x, ret.y);
 }
 
+static __inline__ __device__ float __sqrtf(float x)
+{
+    float ret;
+    asm("sqrtf.approx.f32 %0, %1;" : "=f"(ret) : "f"(x));
+    return ret;
+}
+
+
 // Math helper functions
 static inline __device__ float floorf(float a) { return __builtin_floorf(a); }
 static inline __device__ float floor(float a) { return __builtin_floorf(a); }
@@ -187,5 +221,12 @@ static inline __device__ float __saturatef(float a) { return __nvvm_saturate_f(a
 static inline __device__ float __sinf(float a) { return __nvvm_sin_approx_f(a); }
 static inline __device__ float __cosf(float a) { return __nvvm_cos_approx_f(a); }
 static inline __device__ float __expf(float a) { return __nvvm_ex2_approx_f(a * (float)__builtin_log2(__builtin_exp(1))); }
+static inline __device__ float __powf(float a, float b) { return __nvvm_ex2_approx_f(__nvvm_lg2_approx_f(a) * b); }
+
+static inline __device__ float __exp2f(float a) { return __nvvm_ex2_approx_f(a); }
+////static inline __device__ float __expf(float a) { return __nvvm_ex2_approx_f(a * 1.4427f); }
+static inline __device__ float __log2f(float a) { return __nvvm_lg2_approx_f(a); }
+static inline __device__ float __logf(float a) { return __nvvm_lg2_approx_f(a) * 0.693147f; }
+static inline __device__ float __log10f(float a) { return __nvvm_lg2_approx_f(a) * 0.30103f; }
 
 #endif /* COMPAT_CUDA_CUDA_RUNTIME_H */

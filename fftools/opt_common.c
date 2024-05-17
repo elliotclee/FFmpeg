@@ -194,18 +194,19 @@ static void print_all_libs_info(int flags, int level)
     PRINT_LIB_INFO(postproc,   POSTPROC,   flags, level);
 }
 
-static void print_program_info(int flags, int level)
+static void print_program_info(int flags, int level, int print_config)
 {
     const char *indent = flags & INDENT? "  " : "";
 
     av_log(NULL, level, "%s version " FFMPEG_VERSION, program_name);
     if (flags & SHOW_COPYRIGHT)
-        av_log(NULL, level, " Copyright (c) %d-%d the FFmpeg developers",
+        av_log(NULL, level, " Copyright (c) %d-%d the FFmpeg developers and softworkz for Emby LLC",
                program_birth_year, CONFIG_THIS_YEAR);
     av_log(NULL, level, "\n");
     av_log(NULL, level, "%sbuilt with %s\n", indent, CC_IDENT);
 
-    av_log(NULL, level, "%sconfiguration: " FFMPEG_CONFIGURATION "\n", indent);
+    if (print_config)
+        av_log(NULL, level, "%sconfiguration: " FFMPEG_CONFIGURATION "\n", indent);
 }
 
 static void print_buildconf(int flags, int level)
@@ -240,15 +241,15 @@ void show_banner(int argc, char **argv, const OptionDef *options)
     if (hide_banner || idx)
         return;
 
-    print_program_info (INDENT|SHOW_COPYRIGHT, AV_LOG_INFO);
+    print_program_info (INDENT|SHOW_COPYRIGHT, AV_LOG_INFO, 0);
     print_all_libs_info(INDENT|SHOW_CONFIG,  AV_LOG_INFO);
-    print_all_libs_info(INDENT|SHOW_VERSION, AV_LOG_INFO);
+    print_all_libs_info(INDENT|SHOW_VERSION, AV_LOG_DEBUG);
 }
 
 int show_version(void *optctx, const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
-    print_program_info (SHOW_COPYRIGHT, AV_LOG_INFO);
+    print_program_info (SHOW_COPYRIGHT, AV_LOG_INFO, 1);
     print_all_libs_info(SHOW_VERSION, AV_LOG_INFO);
 
     return 0;
@@ -427,24 +428,6 @@ static void show_help_codec(const char *name, int encoder)
     }
 }
 
-static void show_help_demuxer(const char *name)
-{
-    const AVInputFormat *fmt = av_find_input_format(name);
-
-    if (!fmt) {
-        av_log(NULL, AV_LOG_ERROR, "Unknown format '%s'.\n", name);
-        return;
-    }
-
-    printf("Demuxer %s [%s]:\n", fmt->name, fmt->long_name);
-
-    if (fmt->extensions)
-        printf("    Common extensions: %s.\n", fmt->extensions);
-
-    if (fmt->priv_class)
-        show_help_children(fmt->priv_class, AV_OPT_FLAG_DECODING_PARAM);
-}
-
 static void show_help_protocol(const char *name)
 {
     const AVClass *proto_class;
@@ -461,6 +444,24 @@ static void show_help_protocol(const char *name)
     }
 
     show_help_children(proto_class, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_ENCODING_PARAM);
+}
+
+static void show_help_demuxer(const char *name)
+{
+    const AVInputFormat *fmt = av_find_input_format(name);
+
+    if (!fmt) {
+        av_log(NULL, AV_LOG_ERROR, "Unknown format '%s'.\n", name);
+        return;
+    }
+
+    printf("Demuxer %s [%s]:\n", fmt->name, fmt->long_name);
+
+    if (fmt->extensions)
+        printf("    Common extensions: %s.\n", fmt->extensions);
+
+    if (fmt->priv_class)
+        show_help_children(fmt->priv_class, AV_OPT_FLAG_DECODING_PARAM);
 }
 
 static void show_help_muxer(const char *name)
@@ -501,7 +502,8 @@ static void show_help_filter(const char *name)
 {
 #if CONFIG_AVFILTER
     const AVFilter *f = avfilter_get_by_name(name);
-    int i, count;
+    AVBPrint bp;
+    int i, count, ret;
 
     if (!name) {
         av_log(NULL, AV_LOG_ERROR, "No filter name specified.\n");
@@ -511,40 +513,54 @@ static void show_help_filter(const char *name)
         return;
     }
 
-    printf("Filter %s\n", f->name);
+    av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
+    av_log_set_callback(NULL);
+
+    av_bprintf(&bp, "Filter %s\n", f->name);
     if (f->description)
-        printf("  %s\n", f->description);
+        av_bprintf(&bp, "  %s\n", f->description);
 
     if (f->flags & AVFILTER_FLAG_SLICE_THREADS)
-        printf("    slice threading supported\n");
+        av_bprintf(&bp, "    slice threading supported\n");
 
-    printf("    Inputs:\n");
+    av_bprintf(&bp, "    Inputs:\n");
     count = avfilter_filter_pad_count(f, 0);
     for (i = 0; i < count; i++) {
-        printf("       #%d: %s (%s)\n", i, avfilter_pad_get_name(f->inputs, i),
+        av_bprintf(&bp, "       #%d: %s (%s), Formats: ", i, avfilter_pad_get_name(f->inputs, i),
                av_get_media_type_string(avfilter_pad_get_type(f->inputs, i)));
+
+        avfilter_print_config_formats(&bp, f, 0, i);
+        av_bprintf(&bp, "\n");
     }
     if (f->flags & AVFILTER_FLAG_DYNAMIC_INPUTS)
-        printf("        dynamic (depending on the options)\n");
+        av_bprintf(&bp, "        dynamic (depending on the options)\n");
     else if (!count)
-        printf("        none (source filter)\n");
+        av_bprintf(&bp, "        none (source filter)\n");
 
-    printf("    Outputs:\n");
+    av_bprintf(&bp, "    Outputs:\n");
     count = avfilter_filter_pad_count(f, 1);
     for (i = 0; i < count; i++) {
-        printf("       #%d: %s (%s)\n", i, avfilter_pad_get_name(f->outputs, i),
+        av_bprintf(&bp, "       #%d: %s (%s), Formats: ", i, avfilter_pad_get_name(f->outputs, i),
                av_get_media_type_string(avfilter_pad_get_type(f->outputs, i)));
+ 
+        avfilter_print_config_formats(&bp, f, 1, i);
+        av_bprintf(&bp, "\n");
     }
     if (f->flags & AVFILTER_FLAG_DYNAMIC_OUTPUTS)
-        printf("        dynamic (depending on the options)\n");
+        av_bprintf(&bp, "        dynamic (depending on the options)\n");
     else if (!count)
-        printf("        none (sink filter)\n");
+        av_bprintf(&bp, "        none (sink filter)\n");
+
+    av_log_set_callback(log_callback_help);
+    printf("%s\n", bp.str);
 
     if (f->priv_class)
         show_help_children(f->priv_class, AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM |
                                           AV_OPT_FLAG_AUDIO_PARAM);
     if (f->flags & AVFILTER_FLAG_SUPPORT_TIMELINE)
         printf("This filter has support for timeline through the 'enable' option.\n");
+
+    av_bprint_finalize(&bp, NULL);
 #else
     av_log(NULL, AV_LOG_ERROR, "Build without libavfilter; "
            "can not to satisfy request\n");
@@ -1267,6 +1283,18 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
                 flags &= ~AV_LOG_PRINT_LEVEL;
             } else {
                 flags |= AV_LOG_PRINT_LEVEL;
+            }
+        } else if (av_strstart(token, "timing", &arg)) {
+            if (cmd == '-') {
+                flags &= ~AV_LOG_PRINT_TIME;
+            } else {
+                flags |= AV_LOG_PRINT_TIME;
+            }
+        } else if (av_strstart(token, "datetiming", &arg)) {
+            if (cmd == '-') {
+                flags &= ~AV_LOG_PRINT_DATETIME;
+            } else {
+                flags |= AV_LOG_PRINT_DATETIME;
             }
         } else {
             break;

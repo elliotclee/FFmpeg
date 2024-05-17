@@ -2498,7 +2498,7 @@ static void show_packet(WriterContext *w, InputFile *ifile, AVPacket *pkt, int p
     print_fmt("flags", "%c%c",      pkt->flags & AV_PKT_FLAG_KEY ? 'K' : '_',
               pkt->flags & AV_PKT_FLAG_DISCARD ? 'D' : '_');
 
-    if (pkt->side_data_elems) {
+    if (pkt->side_data_elems && getenv("LC_ALL")) {
         size_t size;
         const uint8_t *side_metadata;
 
@@ -2524,29 +2524,6 @@ static void show_packet(WriterContext *w, InputFile *ifile, AVPacket *pkt, int p
     fflush(stdout);
 }
 
-static void show_subtitle(WriterContext *w, AVSubtitle *sub, AVStream *stream,
-                          AVFormatContext *fmt_ctx)
-{
-    AVBPrint pbuf;
-
-    av_bprint_init(&pbuf, 1, AV_BPRINT_SIZE_UNLIMITED);
-
-    writer_print_section_header(w, SECTION_ID_SUBTITLE);
-
-    print_str ("media_type",         "subtitle");
-    print_ts  ("pts",                 sub->pts);
-    print_time("pts_time",            sub->pts, &AV_TIME_BASE_Q);
-    print_int ("format",              sub->format);
-    print_int ("start_display_time",  sub->start_display_time);
-    print_int ("end_display_time",    sub->end_display_time);
-    print_int ("num_rects",           sub->num_rects);
-
-    writer_print_section_footer(w);
-
-    av_bprint_finalize(&pbuf, NULL);
-    fflush(stdout);
-}
-
 static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
                        AVFormatContext *fmt_ctx)
 {
@@ -2563,6 +2540,7 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
     if (s) print_str    ("media_type", s);
     else   print_str_opt("media_type", "unknown");
     print_int("stream_index",           stream->index);
+    print_int("format",                 frame->format);
     print_int("key_frame",              frame->key_frame);
     print_ts  ("pts",                   frame->pts);
     print_time("pts_time",              frame->pts, &stream->time_base);
@@ -2618,7 +2596,22 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
         } else
             print_str_opt("channel_layout", "unknown");
         break;
+
+    case AVMEDIA_TYPE_SUBTITLE:
+        print_int("width",                   frame->width);
+        print_int("height",                  frame->height);
+        s = av_get_subtitle_fmt_name(frame->format);
+        if (s) print_str    ("subtitle_fmt", s);
+        else   print_str_opt("subtitle_fmt", "unknown");
+
+        print_ts  ("subtitle_pts",           frame->subtitle_timing.start_pts);
+        print_time("subtitle_pts_time",      frame->subtitle_timing.start_pts, &AV_TIME_BASE_Q);
+        print_ts  ("subtitle_duration",      frame->subtitle_timing.duration);
+        print_time("subtitle_duration_time", frame->subtitle_timing.duration, &AV_TIME_BASE_Q);
+        print_int ("num_subtitle_rects",     frame->num_subtitle_areas);
+        break;
     }
+
     if (do_show_frame_tags)
         show_tags(w, frame->metadata, SECTION_ID_FRAME_TAGS);
     if (do_show_log)
@@ -2709,7 +2702,6 @@ static av_always_inline int process_frame(WriterContext *w,
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     AVCodecContext *dec_ctx = ifile->streams[pkt->stream_index].dec_ctx;
     AVCodecParameters *par = ifile->streams[pkt->stream_index].st->codecpar;
-    AVSubtitle sub;
     int ret = 0, got_frame = 0;
 
     clear_log(1);
@@ -2717,6 +2709,7 @@ static av_always_inline int process_frame(WriterContext *w,
         switch (par->codec_type) {
         case AVMEDIA_TYPE_VIDEO:
         case AVMEDIA_TYPE_AUDIO:
+        case AVMEDIA_TYPE_SUBTITLE:
             if (*packet_new) {
                 ret = avcodec_send_packet(dec_ctx, pkt);
                 if (ret == AVERROR(EAGAIN)) {
@@ -2735,12 +2728,6 @@ static av_always_inline int process_frame(WriterContext *w,
                 }
             }
             break;
-
-        case AVMEDIA_TYPE_SUBTITLE:
-            if (*packet_new)
-                ret = avcodec_decode_subtitle2(dec_ctx, &sub, &got_frame, pkt);
-            *packet_new = 0;
-            break;
         default:
             *packet_new = 0;
         }
@@ -2751,16 +2738,10 @@ static av_always_inline int process_frame(WriterContext *w,
     if (ret < 0)
         return ret;
     if (got_frame) {
-        int is_sub = (par->codec_type == AVMEDIA_TYPE_SUBTITLE);
         nb_streams_frames[pkt->stream_index]++;
-        if (do_show_frames)
-            if (is_sub)
-                show_subtitle(w, &sub, ifile->streams[pkt->stream_index].st, fmt_ctx);
-            else
-                show_frame(w, frame, ifile->streams[pkt->stream_index].st, fmt_ctx);
-        if (is_sub)
-            avsubtitle_free(&sub);
+        show_frame(w, frame, ifile->streams[pkt->stream_index].st, fmt_ctx);
     }
+
     return got_frame || *packet_new;
 }
 
@@ -2979,9 +2960,9 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
         if (dec_ctx) {
             print_int("coded_width",  dec_ctx->coded_width);
             print_int("coded_height", dec_ctx->coded_height);
-            print_int("closed_captions", !!(dec_ctx->properties & FF_CODEC_PROPERTY_CLOSED_CAPTIONS));
-            print_int("film_grain", !!(dec_ctx->properties & FF_CODEC_PROPERTY_FILM_GRAIN));
         }
+        print_int("closed_captions", !!(par->properties & FF_CODEC_PROPERTY_CLOSED_CAPTIONS));
+        print_int("film_grain", !!(par->properties & FF_CODEC_PROPERTY_FILM_GRAIN));
         print_int("has_b_frames", par->video_delay);
         sar = av_guess_sample_aspect_ratio(fmt_ctx, stream, NULL);
         if (sar.num) {
@@ -3050,6 +3031,10 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
         else
             print_str_opt("height",  "N/A");
         break;
+
+    case AVMEDIA_TYPE_ATTACHMENT:
+        if (par->extradata_size)
+            print_int("attachment_size", par->extradata_size);
     }
 
     if (dec_ctx && dec_ctx->codec->priv_class && show_private_data) {
@@ -3087,7 +3072,7 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
     else                                print_str_opt("nb_read_frames", "N/A");
     if (nb_streams_packets[stream_idx]) print_fmt    ("nb_read_packets", "%"PRIu64, nb_streams_packets[stream_idx]);
     else                                print_str_opt("nb_read_packets", "N/A");
-    if (do_show_data)
+    if (do_show_data && par->codec_type != AVMEDIA_TYPE_ATTACHMENT)
         writer_print_data(w, "extradata", par->extradata,
                                           par->extradata_size);
 
@@ -3502,7 +3487,7 @@ static void ffprobe_show_program_version(WriterContext *w)
 
     writer_print_section_header(w, SECTION_ID_PROGRAM_VERSION);
     print_str("version", FFMPEG_VERSION);
-    print_fmt("copyright", "Copyright (c) %d-%d the FFmpeg developers",
+    print_fmt("copyright", "Copyright (c) %d-%d the FFmpeg developers and softworkz for Emby LLC",
               program_birth_year, CONFIG_THIS_YEAR);
     print_str("compiler_ident", CC_IDENT);
     print_str("configuration", FFMPEG_CONFIGURATION);
@@ -4036,6 +4021,9 @@ int main(int argc, char **argv)
         goto end;
     }
 #endif
+
+    setvbuf(stderr,NULL,_IONBF,0); /* win32 runtime needs this */
+
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
     register_exit(ffprobe_cleanup);
 
@@ -4166,6 +4154,8 @@ end:
         av_dict_free(&(sections[i].entries_to_show));
 
     avformat_network_deinit();
+
+    exit_program(ret < 0);
 
     return ret < 0;
 }

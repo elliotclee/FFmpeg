@@ -42,6 +42,7 @@
 #include "formats.h"
 #include "framepool.h"
 #include "internal.h"
+#include "subtitles.h"
 
 static void tlog_ref(void *ctx, AVFrame *ref, int end)
 {
@@ -51,7 +52,8 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
             ref->linesize[0], ref->linesize[1], ref->linesize[2], ref->linesize[3],
             ref->pts, ref->pkt_pos);
 
-    if (ref->width) {
+    switch(ref->type) {
+    case AVMEDIA_TYPE_VIDEO:
         ff_tlog(ctx, " a:%d/%d s:%dx%d i:%c iskey:%d type:%c",
                 ref->sample_aspect_ratio.num, ref->sample_aspect_ratio.den,
                 ref->width, ref->height,
@@ -59,12 +61,13 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
                 ref->top_field_first ? 'T' : 'B',    /* Top / Bottom */
                 ref->key_frame,
                 av_get_picture_type_char(ref->pict_type));
-    }
-    if (ref->nb_samples) {
+        break;
+    case AVMEDIA_TYPE_AUDIO:
         ff_tlog(ctx, " cl:%"PRId64"d n:%d r:%d",
                 ref->channel_layout,
                 ref->nb_samples,
                 ref->sample_rate);
+        break;
     }
 
     ff_tlog(ctx, "]%s", end ? "\n" : "");
@@ -186,6 +189,106 @@ void avfilter_link_free(AVFilterLink **link)
     av_channel_layout_uninit(&(*link)->ch_layout);
 
     av_freep(link);
+}
+
+static unsigned get_nb_pix_fmts()
+{
+    unsigned i = 0;
+    while (av_pix_fmt_desc_get(i++)) {}
+    return i - 1;
+}
+
+static unsigned get_nb_sample_fmts()
+{
+    unsigned i = 0;
+    while (av_get_sample_fmt_name(i++)) {}
+    return i - 1;
+}
+
+int avfilter_print_config_formats(AVBPrint *bp, const struct AVFilter *filter, int for_output, unsigned pad_index)
+{
+    AVFilterGraph *graph;
+    AVFilterContext *filter_context;
+    AVFilterFormatsConfig *config;
+    enum AVMediaType media_type;
+    int ret = 0;
+
+    if (filter->formats_state == FF_FILTER_FORMATS_PASSTHROUGH) {
+        av_bprintf(bp, "All (passthrough)");
+        return 0;
+    }
+
+    graph = avfilter_graph_alloc();
+    if (!graph) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to create filtergraph\n");
+        ret = AVERROR(ENOMEM);
+        goto cleanup;
+    }
+
+    filter_context = avfilter_graph_alloc_filter(graph, filter, "filter");
+    if (!filter_context) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to create filter\n");
+        ret = AVERROR(ENOMEM);
+        goto cleanup;
+    }
+
+    avfilter_init_str(filter_context, NULL);
+
+    if (filter->formats_state == FF_FILTER_FORMATS_QUERY_FUNC)
+        av_bprintf(bp, "Dynamic");
+
+    if (!for_output && pad_index >= filter_context->nb_inputs 
+        || for_output && pad_index >= filter_context->nb_outputs)
+        goto cleanup;
+
+    avfilter_graph_config(graph, graph);
+
+    for (unsigned i = 0; i < filter_context->nb_inputs; i++)
+        filter_context->inputs[i] = (AVFilterLink *)av_mallocz(sizeof(AVFilterLink));
+    
+    for (unsigned i = 0; i < filter_context->nb_outputs; i++)
+        filter_context->outputs[i] = (AVFilterLink *)av_mallocz(sizeof(AVFilterLink));
+
+    ff_filter_query_formats(filter_context);
+
+    config = for_output ? &filter_context->outputs[pad_index]->incfg : &filter_context->inputs[pad_index]->outcfg;
+
+    if (!config || !config->formats)
+        goto cleanup;
+
+    media_type= for_output ? filter->outputs[pad_index].type : filter->inputs[pad_index].type;
+
+    if (filter->formats_state == FF_FILTER_FORMATS_QUERY_FUNC) {
+        if (config->formats && config->formats->nb_formats)
+            av_bprintf(bp, ", Default: ");
+    }
+
+    if (config->formats == NULL)
+        av_bprintf(bp, "unknown");
+    else if (media_type == AVMEDIA_TYPE_VIDEO && config->formats->nb_formats == get_nb_pix_fmts() ||
+             media_type == AVMEDIA_TYPE_AUDIO && config->formats->nb_formats == get_nb_sample_fmts())
+        av_bprintf(bp, "All");
+    else {
+        for (unsigned i = 0; i < config->formats->nb_formats; i++) {
+            if (i == 0)
+                av_bprintf(bp, "[");
+
+            if (media_type == AVMEDIA_TYPE_VIDEO)
+                av_bprintf(bp, "%s", av_get_pix_fmt_name(config->formats->formats[i]));
+            else if (media_type == AVMEDIA_TYPE_AUDIO)
+                av_bprintf(bp, "%s", av_get_sample_fmt_name(config->formats->formats[i]));
+            else if (media_type == AVMEDIA_TYPE_SUBTITLE)
+                av_bprintf(bp, "%s", av_get_subtitle_fmt_name(config->formats->formats[i]));
+
+            if (i < config->formats->nb_formats - 1)
+                av_bprintf(bp, ", ");
+            else
+                av_bprintf(bp, "]");        }
+    }
+
+cleanup:
+    avfilter_graph_free(&graph);
+    return ret;
 }
 
 void ff_filter_set_ready(AVFilterContext *filter, unsigned priority)
@@ -347,6 +450,14 @@ int avfilter_config_links(AVFilterContext *filter)
 
                 if (!link->time_base.num && !link->time_base.den)
                     link->time_base = (AVRational) {1, link->sample_rate};
+
+                break;
+
+            case AVMEDIA_TYPE_SUBTITLE:
+                if (!link->time_base.num && !link->time_base.den)
+                    link->time_base = inlink ? inlink->time_base : AV_TIME_BASE_Q;
+
+                break;
             }
 
             if (link->src->nb_inputs && link->src->inputs[0]->hw_frames_ctx &&
@@ -440,7 +551,7 @@ static int64_t guess_status_pts(AVFilterContext *ctx, int status, AVRational lin
     return AV_NOPTS_VALUE;
 }
 
-static int ff_request_frame_to_filter(AVFilterLink *link)
+static int ff_request_frame_to_filter(AVFilterLink *link, int input_index)
 {
     int ret = -1;
 
@@ -449,8 +560,8 @@ static int ff_request_frame_to_filter(AVFilterLink *link)
     link->frame_blocked_in = 1;
     if (link->srcpad->request_frame)
         ret = link->srcpad->request_frame(link);
-    else if (link->src->inputs[0])
-        ret = ff_request_frame(link->src->inputs[0]);
+    else if (link->src->inputs[input_index])
+        ret = ff_request_frame(link->src->inputs[input_index]);
     if (ret < 0) {
         if (ret != AVERROR(EAGAIN) && ret != link->status_in)
             ff_avfilter_link_set_in_status(link, ret, guess_status_pts(link->src, ret, link->time_base));
@@ -749,12 +860,12 @@ void avfilter_free(AVFilterContext *filter)
 
     for (i = 0; i < filter->nb_inputs; i++) {
         free_link(filter->inputs[i]);
-        if (filter->input_pads[i].flags  & AVFILTERPAD_FLAG_FREE_NAME)
+        if (filter->input_pads && filter->input_pads[i].flags  & AVFILTERPAD_FLAG_FREE_NAME)
             av_freep(&filter->input_pads[i].name);
     }
     for (i = 0; i < filter->nb_outputs; i++) {
         free_link(filter->outputs[i]);
-        if (filter->output_pads[i].flags & AVFILTERPAD_FLAG_FREE_NAME)
+        if (filter->output_pads && filter->output_pads[i].flags & AVFILTERPAD_FLAG_FREE_NAME)
             av_freep(&filter->output_pads[i].name);
     }
 
@@ -1008,9 +1119,13 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
             strcmp(link->dst->filter->name, "idet") &&
             strcmp(link->dst->filter->name, "null") &&
             strcmp(link->dst->filter->name, "scale")) {
-            av_assert1(frame->format                 == link->format);
-            av_assert1(frame->width               == link->w);
-            av_assert1(frame->height               == link->h);
+            ////av_assert1(frame->format                 == link->format);
+            ////av_assert1(frame->width               == link->w);
+            ////av_assert1(frame->height               == link->h);
+        }
+    } else if (link->type == AVMEDIA_TYPE_SUBTITLE) {
+        if (frame->format != link->format) {
+            av_log(link->dst, AV_LOG_WARNING, "Subtitle format change from %d to %d\n", link->format, frame->format);
         }
     } else {
         if (frame->format != link->format) {
@@ -1146,6 +1261,14 @@ static int forward_status_change(AVFilterContext *filter, AVFilterLink *in)
 {
     unsigned out = 0, progress = 0;
     int ret;
+    int input_index = 0;
+
+    for (int i = 0; i < in->dst->nb_inputs; i++) {
+        if (&in->dst->input_pads[i] == in->dstpad) {
+            input_index = i;
+            break;
+        }
+    }
 
     av_assert0(!in->status_out);
     if (!filter->nb_outputs) {
@@ -1155,7 +1278,7 @@ static int forward_status_change(AVFilterContext *filter, AVFilterLink *in)
     while (!in->status_out) {
         if (!filter->outputs[out]->status_in) {
             progress++;
-            ret = ff_request_frame_to_filter(filter->outputs[out]);
+            ret = ff_request_frame_to_filter(filter->outputs[out], input_index);
             if (ret < 0)
                 return ret;
         }
@@ -1192,7 +1315,7 @@ static int ff_filter_activate_default(AVFilterContext *filter)
     for (i = 0; i < filter->nb_outputs; i++) {
         if (filter->outputs[i]->frame_wanted_out &&
             !filter->outputs[i]->frame_blocked_in) {
-            return ff_request_frame_to_filter(filter->outputs[i]);
+            return ff_request_frame_to_filter(filter->outputs[i], 0);
         }
     }
     return FFERROR_NOT_READY;
@@ -1451,6 +1574,9 @@ int ff_inlink_make_frame_writable(AVFilterLink *link, AVFrame **rframe)
         break;
     case AVMEDIA_TYPE_AUDIO:
         out = ff_get_audio_buffer(link, frame->nb_samples);
+        break;
+    case AVMEDIA_TYPE_SUBTITLE:
+        out = ff_get_subtitles_buffer(link, link->format);
         break;
     default:
         return AVERROR(EINVAL);

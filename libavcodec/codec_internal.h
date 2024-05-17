@@ -23,6 +23,7 @@
 
 #include "libavutil/attributes.h"
 #include "codec.h"
+#include "packet.h"
 
 /**
  * The codec does not modify any global variables in the init function,
@@ -101,9 +102,6 @@ enum FFCodecType {
     /* The codec is an encoder using the encode callback;
      * audio and video codecs only. */
     FF_CODEC_CB_TYPE_ENCODE,
-    /* The codec is an encoder using the encode_sub callback;
-     * subtitle codecs only. */
-    FF_CODEC_CB_TYPE_ENCODE_SUB,
     /* The codec is an encoder using the receive_packet callback;
      * audio and video codecs only. */
     FF_CODEC_CB_TYPE_RECEIVE_PACKET,
@@ -207,12 +205,6 @@ typedef struct FFCodec {
         int (*encode)(struct AVCodecContext *avctx, struct AVPacket *avpkt,
                       const struct AVFrame *frame, int *got_packet_ptr);
         /**
-         * Encode subtitles to a raw buffer.
-         * cb is in this state if cb_type is FF_CODEC_CB_TYPE_ENCODE_SUB.
-         */
-        int (*encode_sub)(struct AVCodecContext *avctx, uint8_t *buf,
-                          int buf_size, const struct AVSubtitle *sub);
-        /**
          * Encode API with decoupled frame/packet dataflow.
          * cb is in this state if cb_type is FF_CODEC_CB_TYPE_RECEIVE_PACKET.
          *
@@ -221,6 +213,15 @@ typedef struct FFCodec {
          */
         int (*receive_packet)(struct AVCodecContext *avctx, struct AVPacket *avpkt);
     } cb;
+
+//Emby Custom (based on code published by Plex at http://downloads.plex.tv/ffmpeg-source/ffmpeg-2018-03-22.tar.gz)
+    int (*send_packet)(struct AVCodecContext *avctx, const AVPacket *avpkt);
+    /**
+     * Check whether the codec is available (useful for system codecs). If it's
+     * not, registering the codec will fail and not add it to the codec list.
+     */
+    int (*probe)(struct AVCodec *codec);
+//Emby
 
     int (*close)(struct AVCodecContext *);
 
@@ -263,9 +264,6 @@ typedef struct FFCodec {
 #define FF_CODEC_ENCODE_CB(func)                          \
     .cb_type           = FF_CODEC_CB_TYPE_ENCODE,         \
     .cb.encode         = (func)
-#define FF_CODEC_ENCODE_SUB_CB(func)                      \
-    .cb_type           = FF_CODEC_CB_TYPE_ENCODE_SUB,     \
-    .cb.encode_sub     = (func)
 #define FF_CODEC_RECEIVE_PACKET_CB(func)                  \
     .cb_type           = FF_CODEC_CB_TYPE_RECEIVE_PACKET, \
     .cb.receive_packet = (func)

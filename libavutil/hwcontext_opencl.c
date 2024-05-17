@@ -2260,12 +2260,7 @@ static int opencl_map_from_qsv(AVHWFramesContext *dst_fc, AVFrame *dst,
     if (src->format == AV_PIX_FMT_QSV) {
         void *base_handle;
         mfxFrameSurface1 *mfx_surface = (mfxFrameSurface1*)src->data[3];
-        err = ff_qsv_get_surface_base_handle(mfx_surface,
-                                             AV_HWDEVICE_TYPE_VAAPI,
-                                             &base_handle);
-        if (err < 0)
-            return err;
-        va_surface = *(VASurfaceID *)base_handle;
+        va_surface = *(VASurfaceID*)mfx_surface->Data.MemId;
     } else
 #endif
         if (src->format == AV_PIX_FMT_VAAPI) {

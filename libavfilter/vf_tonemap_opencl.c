@@ -63,14 +63,14 @@ typedef struct TonemapOpenCLContext {
     double                param;
     double                desat_param;
     double                target_peak;
-    double                scene_threshold;
+    ////double                scene_threshold;
     int                   initialised;
     cl_kernel             kernel;
     cl_command_queue      command_queue;
-    cl_mem                util_mem;
+    ////cl_mem                util_mem;
 } TonemapOpenCLContext;
 
-static const char *const linearize_funcs[AVCOL_TRC_NB] = {
+static const char *linearize_funcs[AVCOL_TRC_NB] = {
     [AVCOL_TRC_SMPTE2084] = "eotf_st2084",
     [AVCOL_TRC_ARIB_STD_B67] = "inverse_oetf_hlg",
 };
@@ -108,6 +108,34 @@ static int get_rgb2rgb_matrix(enum AVColorPrimaries in, enum AVColorPrimaries ou
     return 0;
 }
 
+static float eotf_st2084(float x) {
+#define ST2084_MAX_LUMINANCE 10000.0f
+#define REFERENCE_WHITE 100.0f
+#define ST2084_M1 0.1593017578125f
+#define ST2084_M2 78.84375f
+#define ST2084_C1 0.8359375f
+#define ST2084_C2 18.8515625f
+#define ST2084_C3 18.6875f
+    const float p = powf(x, 1.0f / ST2084_M2);
+    const float a = FFMAX(p - ST2084_C1, 0.0f);
+    const float b = FFMAX(ST2084_C2 - ST2084_C3 * p, 1e-6f);
+    const float c = powf(a / b, 1.0f / ST2084_M1);
+    return x > 0.0f ? c * ST2084_MAX_LUMINANCE / REFERENCE_WHITE : 0.0f;
+}
+
+static float inverse_eotf_bt1886(float c) {
+    return c < 0.0f ? 0.0f : powf(c, 1.0f / 2.4f);
+}
+
+static void get_eotf_st2084_lut(float(* lin_lut)[1024], float(* delin_lut)[1024]) {
+
+    for (int i = 0; i < 1024; i++) {
+        const float v1 = (float)i / 1023.0f;
+        (*lin_lut)[i] = FFMAX(eotf_st2084(v1), 0);
+        (*delin_lut)[i] = FFMAX(inverse_eotf_bt1886(v1), 0);
+    }
+}
+
 #define OPENCL_SOURCE_NB 3
 // Average light level for SDR signals. This is equal to a signal level of 0.5
 // under a typical presentation gamma of about 2.0.
@@ -124,7 +152,7 @@ static int tonemap_opencl_init(AVFilterContext *avctx)
     AVBPrint header;
     const char *opencl_sources[OPENCL_SOURCE_NB];
 
-    av_bprint_init(&header, 1024, AV_BPRINT_SIZE_AUTOMATIC);
+    av_bprint_init(&header, 2048, AV_BPRINT_SIZE_UNLIMITED);
 
     switch(ctx->tonemap) {
     case TONEMAP_GAMMA:
@@ -169,15 +197,29 @@ static int tonemap_opencl_init(AVFilterContext *avctx)
     av_assert0(ctx->primaries_in == AVCOL_PRI_BT2020 ||
                ctx->primaries_in == AVCOL_PRI_BT709);
 
+    ////av_bprintf(&header, "#pragma OPENCL EXTENSION cl_khr_subgroups : enable\n");
+    av_bprintf(&header, "#pragma OPENCL EXTENSION cl_intel_subgroups : enable\n");
+    av_bprintf(&header, "#pragma OPENCL EXTENSION cl_intel_required_subgroup_size : enable\n");
+    av_bprintf(&header, "#pragma OPENCL EXTENSION cl_intel_subgroups_short : enable\n");
+
+#if HAVE_OPENCL_D3D11
+    av_bprintf(&header, "#pragma OPENCL EXTENSION cl_khr_d3d11_sharing : enable\n");
+    av_bprintf(&header, "#pragma OPENCL EXTENSION cl_intel_d3d11_nv12_media_sharing : enable\n");
+#endif
+
+#if HAVE_OPENCL_VAAPI_INTEL_MEDIA
+    av_bprintf(&header, "#pragma OPENCL EXTENSION cl_intel_va_api_media_sharing : enable\n");
+#endif
+
     av_bprintf(&header, "__constant const float tone_param = %.4ff;\n",
                ctx->param);
     av_bprintf(&header, "__constant const float desat_param = %.4ff;\n",
                ctx->desat_param);
     av_bprintf(&header, "__constant const float target_peak = %.4ff;\n",
                ctx->target_peak);
-    av_bprintf(&header, "__constant const float sdr_avg = %.4ff;\n", sdr_avg);
-    av_bprintf(&header, "__constant const float scene_threshold = %.4ff;\n",
-               ctx->scene_threshold);
+    av_bprintf(&header, "__constant const float sdr_avg = %.4ff;\n", (double)sdr_avg);
+    ////av_bprintf(&header, "__constant const float scene_threshold = %.4ff;\n",
+    ////           ctx->scene_threshold);
     av_bprintf(&header, "#define TONE_FUNC %s\n", tonemap_func[ctx->tonemap]);
     av_bprintf(&header, "#define DETECTION_FRAMES %d\n", DETECTION_FRAMES);
 
@@ -194,10 +236,11 @@ static int tonemap_opencl_init(AVFilterContext *avctx)
 
     av_bprintf(&header, "#define chroma_loc %d\n", (int)ctx->chroma_loc);
 
+    av_bprintf(&header, "#define powr native_powr\n");
     if (rgb2rgb_passthrough)
         av_bprintf(&header, "#define RGB2RGB_PASSTHROUGH\n");
     else
-        ff_opencl_print_const_matrix_3x3(&header, "rgb2rgb", rgb2rgb);
+        ff_opencl_print_const_matrix_3xfloat3(&header, "rgb2rgb", rgb2rgb);
 
 
     luma_src = av_csp_luma_coeffs_from_avcsp(ctx->colorspace_in);
@@ -217,11 +260,11 @@ static int tonemap_opencl_init(AVFilterContext *avctx)
     }
 
     ff_fill_rgb2yuv_table(luma_dst, rgb2yuv);
-    ff_opencl_print_const_matrix_3x3(&header, "yuv_matrix", rgb2yuv);
+    ff_opencl_print_const_matrix_3xfloat3(&header, "yuv_matrix", rgb2yuv);
 
     ff_fill_rgb2yuv_table(luma_src, rgb2yuv);
     ff_matrix_invert_3x3(rgb2yuv, yuv2rgb);
-    ff_opencl_print_const_matrix_3x3(&header, "rgb_matrix", yuv2rgb);
+    ff_opencl_print_const_matrix_3xfloat3(&header, "rgb_matrix", yuv2rgb);
 
     av_bprintf(&header, "constant float3 luma_src = {%.4ff, %.4ff, %.4ff};\n",
                av_q2d(luma_src->cr), av_q2d(luma_src->cg), av_q2d(luma_src->cb));
@@ -237,6 +280,13 @@ static int tonemap_opencl_init(AVFilterContext *avctx)
 
     if (ctx->trc_out == AVCOL_TRC_ARIB_STD_B67)
         av_bprintf(&header, "#define inverse_ootf_impl inverse_ootf_hlg\n");
+
+    {
+        float lin_lut[1024], delin_lut[1024];
+        get_eotf_st2084_lut(&lin_lut, &delin_lut);
+        ff_opencl_print_const_array(&header, "lin_lut", lin_lut, 1024);
+        ff_opencl_print_const_array(&header, "delin_lut", delin_lut, 1024);
+    }
 
     av_log(avctx, AV_LOG_DEBUG, "Generated OpenCL header:\n%s\n", header.str);
     opencl_sources[0] = header.str;
@@ -257,19 +307,19 @@ static int tonemap_opencl_init(AVFilterContext *avctx)
     ctx->kernel = clCreateKernel(ctx->ocf.program, "tonemap", &cle);
     CL_FAIL_ON_ERROR(AVERROR(EIO), "Failed to create kernel %d.\n", cle);
 
-    ctx->util_mem =
-        clCreateBuffer(ctx->ocf.hwctx->context, 0,
-                       (2 * DETECTION_FRAMES + 7) * sizeof(unsigned),
-                       NULL, &cle);
-    CL_FAIL_ON_ERROR(AVERROR(EIO), "Failed to create util buffer: %d.\n", cle);
+    ////ctx->util_mem =
+    ////    clCreateBuffer(ctx->ocf.hwctx->context, 0,
+    ////                   (2 * DETECTION_FRAMES + 7) * sizeof(unsigned),
+    ////                   NULL, &cle);
+    ////CL_FAIL_ON_ERROR(AVERROR(EIO), "Failed to create util buffer: %d.\n", cle);
 
     ctx->initialised = 1;
     return 0;
 
 fail:
     av_bprint_finalize(&header, NULL);
-    if (ctx->util_mem)
-        clReleaseMemObject(ctx->util_mem);
+    ////if (ctx->util_mem)
+    ////    clReleaseMemObject(ctx->util_mem);
     if (ctx->command_queue)
         clReleaseCommandQueue(ctx->command_queue);
     if (ctx->kernel)
@@ -301,6 +351,31 @@ static int tonemap_opencl_config_output(AVFilterLink *outlink)
     return 0;
 }
 
+static int opencl_wait_events(AVFilterContext *avctx,
+                              cl_event *events, int nb_events)
+{
+    cl_int cle;
+    int i;
+
+    cle = clWaitForEvents(nb_events, events);
+    if (cle != CL_SUCCESS) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to wait for event "
+               "completion: %d.\n", cle);
+        return AVERROR(EIO);
+    }
+
+    for (i = 0; i < nb_events; i++) {
+        cle = clReleaseEvent(events[i]);
+        if (cle != CL_SUCCESS) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to release "
+                   "event: %d.\n", cle);
+        }
+    }
+
+    return 0;
+}
+
+
 static int launch_kernel(AVFilterContext *avctx, cl_kernel kernel,
                          AVFrame *output, AVFrame *input, float peak) {
     TonemapOpenCLContext *ctx = avctx->priv;
@@ -308,27 +383,38 @@ static int launch_kernel(AVFilterContext *avctx, cl_kernel kernel,
     size_t global_work[2];
     size_t local_work[2];
     cl_int cle;
+    cl_event event;
 
-    CL_SET_KERNEL_ARG(kernel, 0, cl_mem, &output->data[0]);
-    CL_SET_KERNEL_ARG(kernel, 1, cl_mem, &input->data[0]);
-    CL_SET_KERNEL_ARG(kernel, 2, cl_mem, &output->data[1]);
-    CL_SET_KERNEL_ARG(kernel, 3, cl_mem, &input->data[1]);
-    CL_SET_KERNEL_ARG(kernel, 4, cl_mem, &ctx->util_mem);
-    CL_SET_KERNEL_ARG(kernel, 5, cl_float, &peak);
+    av_log(avctx, AV_LOG_DEBUG, "Setting p: %f\n", peak);
 
-    local_work[0]  = 16;
-    local_work[1]  = 16;
+    CL_SET_KERNEL_ARG(kernel, 0, cl_mem, &output->data[0])
+    CL_SET_KERNEL_ARG(kernel, 1, cl_mem, &input->data[0])
+    CL_SET_KERNEL_ARG(kernel, 2, cl_mem, &output->data[1])
+    CL_SET_KERNEL_ARG(kernel, 3, cl_mem, &input->data[1])
+    ////CL_SET_KERNEL_ARG(kernel, 4, cl_mem, &ctx->util_mem)
+    CL_SET_KERNEL_ARG(kernel, 4, cl_float, &peak)
+
+    local_work[0]  = 32;
+    local_work[1]  = 1;
+
     // Note the work size based on uv plane, as we process a 2x2 quad in one workitem
     err = ff_opencl_filter_work_size_from_image(avctx, global_work, output,
-                                                1, 16);
+                                                1, 32);
     if (err < 0)
         return err;
 
+    global_work[0] = global_work[0];
+    global_work[1] = global_work[1] / 4;
+
+    ////av_log(ctx, AV_LOG_ERROR, "\n\nKernel global_work: %d x %d \n", (int)global_work[0], (int)global_work[1]);
+
     cle = clEnqueueNDRangeKernel(ctx->command_queue, kernel, 2, NULL,
                                  global_work, local_work,
-                                 0, NULL, NULL);
+                                 0, NULL, &event);
     CL_FAIL_ON_ERROR(AVERROR(EIO), "Failed to enqueue kernel: %d.\n", cle);
-    return 0;
+
+    return opencl_wait_events(avctx, &event, 1);
+
 fail:
     return err;
 }
@@ -339,7 +425,6 @@ static int tonemap_opencl_filter_frame(AVFilterLink *inlink, AVFrame *input)
     AVFilterLink     *outlink = avctx->outputs[0];
     TonemapOpenCLContext *ctx = avctx->priv;
     AVFrame *output = NULL;
-    cl_int cle;
     int err;
     double peak = ctx->peak;
 
@@ -363,6 +448,7 @@ static int tonemap_opencl_filter_frame(AVFilterLink *inlink, AVFrame *input)
     if (err < 0)
         goto fail;
 
+    /* read peak from side data if not passed in */
     if (!peak)
         peak = ff_determine_signal_peak(input);
 
@@ -414,8 +500,8 @@ static int tonemap_opencl_filter_frame(AVFilterLink *inlink, AVFrame *input)
         goto fail;
     }
 
-    cle = clFinish(ctx->command_queue);
-    CL_FAIL_ON_ERROR(AVERROR(EIO), "Failed to finish command queue: %d.\n", cle);
+    ////cle = clFinish(ctx->command_queue);
+    ////CL_FAIL_ON_ERROR(AVERROR(EIO), "Failed to finish command queue: %d.\n", cle);
 
     av_frame_free(&input);
 
@@ -424,28 +510,28 @@ static int tonemap_opencl_filter_frame(AVFilterLink *inlink, AVFrame *input)
     av_log(ctx, AV_LOG_DEBUG, "Tone-mapping output: %s, %ux%u (%"PRId64").\n",
            av_get_pix_fmt_name(output->format),
            output->width, output->height, output->pts);
-#ifndef NDEBUG
-    {
-        uint32_t *ptr, *max_total_p, *avg_total_p, *frame_number_p;
-        float peak_detected, avg_detected;
-        unsigned map_size = (2 * DETECTION_FRAMES  + 7) * sizeof(unsigned);
-        ptr = (void *)clEnqueueMapBuffer(ctx->command_queue, ctx->util_mem,
-                                         CL_TRUE, CL_MAP_READ, 0, map_size,
-                                         0, NULL, NULL, &cle);
-        // For the layout of the util buffer, refer tonemap.cl
-        if (ptr) {
-            max_total_p = ptr + 2 * (DETECTION_FRAMES + 1) + 1;
-            avg_total_p = max_total_p + 1;
-            frame_number_p = avg_total_p + 2;
-            peak_detected = (float)*max_total_p / (REFERENCE_WHITE * (*frame_number_p));
-            avg_detected = (float)*avg_total_p / (REFERENCE_WHITE * (*frame_number_p));
-            av_log(ctx, AV_LOG_DEBUG, "peak %f, avg %f will be used for next frame\n",
-                   peak_detected, avg_detected);
-            clEnqueueUnmapMemObject(ctx->command_queue, ctx->util_mem, ptr, 0,
-                                    NULL, NULL);
-        }
-    }
-#endif
+////#ifndef NDEBUG
+////    {
+////        uint32_t *ptr, *max_total_p, *avg_total_p, *frame_number_p;
+////        float peak_detected, avg_detected;
+////        unsigned map_size = (2 * DETECTION_FRAMES  + 7) * sizeof(unsigned);
+////        ptr = (void *)clEnqueueMapBuffer(ctx->command_queue, ctx->util_mem,
+////                                         CL_TRUE, CL_MAP_READ, 0, map_size,
+////                                         0, NULL, NULL, &cle);
+////        // For the layout of the util buffer, refer tonemap.cl
+////        if (ptr) {
+////            max_total_p = ptr + 2 * (DETECTION_FRAMES + 1) + 1;
+////            avg_total_p = max_total_p + 1;
+////            frame_number_p = avg_total_p + 2;
+////            peak_detected = (float)*max_total_p / (REFERENCE_WHITE * (*frame_number_p));
+////            avg_detected = (float)*avg_total_p / (REFERENCE_WHITE * (*frame_number_p));
+////            av_log(ctx, AV_LOG_DEBUG, "peak %f, avg %f will be used for next frame\n",
+////                   peak_detected, avg_detected);
+////            clEnqueueUnmapMemObject(ctx->command_queue, ctx->util_mem, ptr, 0,
+////                                    NULL, NULL);
+////        }
+////    }
+////#endif
 
     return ff_filter_frame(outlink, output);
 
@@ -461,8 +547,8 @@ static av_cold void tonemap_opencl_uninit(AVFilterContext *avctx)
     TonemapOpenCLContext *ctx = avctx->priv;
     cl_int cle;
 
-    if (ctx->util_mem)
-        clReleaseMemObject(ctx->util_mem);
+    ////if (ctx->util_mem)
+    ////    clReleaseMemObject(ctx->util_mem);
     if (ctx->kernel) {
         cle = clReleaseKernel(ctx->kernel);
         if (cle != CL_SUCCESS)
@@ -513,7 +599,7 @@ static const AVOption tonemap_opencl_options[] = {
     { "peak",      "signal peak override", OFFSET(peak), AV_OPT_TYPE_DOUBLE, {.dbl = 0}, 0, DBL_MAX, FLAGS },
     { "param",     "tonemap parameter",   OFFSET(param), AV_OPT_TYPE_DOUBLE, {.dbl = NAN}, DBL_MIN, DBL_MAX, FLAGS },
     { "desat",     "desaturation parameter",   OFFSET(desat_param), AV_OPT_TYPE_DOUBLE, {.dbl = 0.5}, 0, DBL_MAX, FLAGS },
-    { "threshold", "scene detection threshold",   OFFSET(scene_threshold), AV_OPT_TYPE_DOUBLE, {.dbl = 0.2}, 0, DBL_MAX, FLAGS },
+    ////{ "threshold", "scene detection threshold",   OFFSET(scene_threshold), AV_OPT_TYPE_DOUBLE, {.dbl = 0.2}, 0, DBL_MAX, FLAGS },
     { NULL }
 };
 

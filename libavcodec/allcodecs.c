@@ -152,6 +152,7 @@ extern const FFCodec ff_h264_decoder;
 extern const FFCodec ff_h264_crystalhd_decoder;
 extern const FFCodec ff_h264_v4l2m2m_decoder;
 extern const FFCodec ff_h264_mediacodec_decoder;
+//Emby^
 extern const FFCodec ff_h264_mmal_decoder;
 extern const FFCodec ff_h264_qsv_decoder;
 extern const FFCodec ff_h264_rkmpp_decoder;
@@ -422,6 +423,7 @@ extern const FFCodec ff_ac3_encoder;
 extern const FFCodec ff_ac3_decoder;
 extern const FFCodec ff_ac3_fixed_encoder;
 extern const FFCodec ff_ac3_fixed_decoder;
+extern const FFCodec ff_ac4_decoder;
 extern const FFCodec ff_acelp_kelvin_decoder;
 extern const FFCodec ff_alac_encoder;
 extern const FFCodec ff_alac_decoder;
@@ -738,6 +740,7 @@ extern const FFCodec ff_pcm_alaw_at_encoder;
 extern const FFCodec ff_pcm_alaw_at_decoder;
 extern const FFCodec ff_pcm_mulaw_at_encoder;
 extern const FFCodec ff_pcm_mulaw_at_decoder;
+//Emby
 extern const FFCodec ff_qdmc_at_decoder;
 extern const FFCodec ff_qdm2_at_decoder;
 extern FFCodec ff_libaom_av1_encoder;
@@ -820,6 +823,7 @@ extern const FFCodec ff_libopenh264_encoder;
 extern const FFCodec ff_libopenh264_decoder;
 extern const FFCodec ff_h264_amf_encoder;
 extern const FFCodec ff_h264_cuvid_decoder;
+//Emby^
 extern const FFCodec ff_h264_mf_encoder;
 extern const FFCodec ff_h264_nvenc_encoder;
 extern const FFCodec ff_h264_omx_encoder;
@@ -830,6 +834,7 @@ extern const FFCodec ff_h264_videotoolbox_encoder;
 extern const FFCodec ff_hevc_amf_encoder;
 extern const FFCodec ff_hevc_cuvid_decoder;
 extern const FFCodec ff_hevc_mediacodec_decoder;
+//Emby^
 extern const FFCodec ff_hevc_mf_encoder;
 extern const FFCodec ff_hevc_nvenc_encoder;
 extern const FFCodec ff_hevc_qsv_encoder;

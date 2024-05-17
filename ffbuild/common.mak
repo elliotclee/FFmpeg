@@ -44,6 +44,7 @@ ASFLAGS    := $(CPPFLAGS) $(ASFLAGS)
 # end up in CXXFLAGS.
 $(call PREPEND,CXXFLAGS, CPPFLAGS CFLAGS)
 X86ASMFLAGS += $(IFLAGS:%=%/) -I$(<D)/ -Pconfig.asm
+NVCCFLAGS  += $(IFLAGS)
 
 HOSTCCFLAGS = $(IFLAGS) $(HOSTCPPFLAGS) $(HOSTCFLAGS)
 LDFLAGS    := $(ALLFFLIBS:%=$(LD_PATH)lib%) $(LDFLAGS)
@@ -159,6 +160,7 @@ endif
 include $(SRC_PATH)/ffbuild/arch.mak
 
 OBJS      += $(OBJS-yes)
+OBJS      += $(OBJS-$(NAME))
 SLIBOBJS  += $(SLIBOBJS-yes)
 SHLIBOBJS += $(SHLIBOBJS-yes)
 STLIBOBJS += $(STLIBOBJS-yes)
@@ -216,6 +218,18 @@ OUTDIRS := $(OUTDIRS) $(dir $(OBJS) $(HOBJS) $(HOSTOBJS) $(SLIBOBJS) $(SHLIBOBJS
 
 CLEANSUFFIXES     = *.d *.gcda *.gcno *.h.c *.ho *.map *.o *.pc *.ptx *.ptx.gz *.ptx.c *.ver *.version *$(DEFAULT_X86ASMD).asm *~ *.ilk *.pdb
 LIBSUFFIXES       = *.a *.lib *.so *.so.* *.dylib *.dll *.def *.dll.a
+
+define RM_SPLIT
+	$(eval _splitargs:=)
+	$(foreach obj,$1,$(eval _splitargs+=$(wildcard $(obj))))
+	$(eval _args:=)
+	$(foreach obj,$(_splitargs),$(eval _args+=$(obj))$(if $(word 20,$(_args)),$(RM)$(_args)$(EOL)$(eval _args:=)))
+	$(if $(_args),$(RM)$(_args))
+endef
+define EOL
+
+
+endef
 
 define RULES
 clean::

@@ -1320,7 +1320,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 av_log(av_log_obj, AV_LOG_INFO, "%-12s ", "<boolean>");
                 break;
             case AV_OPT_TYPE_CONST:
-                if (parent_type == AV_OPT_TYPE_INT)
+                if (parent_type == AV_OPT_TYPE_INT || parent_type == AV_OPT_TYPE_INT64)
                     av_log(av_log_obj, AV_LOG_INFO, "%-12"PRId64" ", opt->default_val.i64);
                 else
                     av_log(av_log_obj, AV_LOG_INFO, "%-12s ", "");

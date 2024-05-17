@@ -140,7 +140,7 @@ static void dump_metadata(void *ctx, const AVDictionary *m, const char *indent)
 
         av_log(ctx, AV_LOG_INFO, "%sMetadata:\n", indent);
         while ((tag = av_dict_get(m, "", tag, AV_DICT_IGNORE_SUFFIX)))
-            if (strcmp("language", tag->key)) {
+            if (strcmp("language", tag->key) && tag->key[0] != '_') {
                 const char *p = tag->value;
                 av_log(ctx, AV_LOG_INFO,
                        "%s  %-16s: ", indent, tag->key);
@@ -569,6 +569,10 @@ static void dump_stream_format(const AVFormatContext *ic, int i,
     }
 
     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+
+        if (st->codecpar->level > 0)
+            av_log(NULL, AV_LOG_INFO, ", Level %d", st->codecpar->level);
+
         int fps = st->avg_frame_rate.den && st->avg_frame_rate.num;
         int tbr = st->r_frame_rate.den && st->r_frame_rate.num;
         int tbn = st->time_base.den && st->time_base.num;
@@ -582,6 +586,11 @@ static void dump_stream_format(const AVFormatContext *ic, int i,
             print_fps(av_q2d(st->r_frame_rate), tbn ? "tbr, " : "tbr");
         if (tbn)
             print_fps(1 / av_q2d(st->time_base), "tbn");
+    }
+
+    if (st->start_time != AV_NOPTS_VALUE && st->start_time != 0 && st->time_base.den && st->time_base.num) {
+        const double stream_start = st->start_time * av_q2d(st->time_base);
+        av_log(NULL, AV_LOG_INFO, ", Start-Time %.3fs", stream_start);
     }
 
     if (st->disposition & AV_DISPOSITION_DEFAULT)
@@ -676,18 +685,16 @@ void av_dump_format(AVFormatContext *ic, int index,
         av_log(NULL, AV_LOG_INFO, "\n");
     }
 
-    if (ic->nb_chapters)
-        av_log(NULL, AV_LOG_INFO, "  Chapters:\n");
-    for (i = 0; i < ic->nb_chapters; i++) {
-        const AVChapter *ch = ic->chapters[i];
-        av_log(NULL, AV_LOG_INFO, "    Chapter #%d:%d: ", index, i);
-        av_log(NULL, AV_LOG_INFO,
-               "start %f, ", ch->start * av_q2d(ch->time_base));
-        av_log(NULL, AV_LOG_INFO,
-               "end %f\n", ch->end * av_q2d(ch->time_base));
+    ////for (i = 0; i < ic->nb_chapters; i++) {
+    ////    AVChapter *ch = ic->chapters[i];
+    ////    av_log(NULL, AV_LOG_INFO, "    Chapter #%d:%d: ", index, i);
+    ////    av_log(NULL, AV_LOG_INFO,
+    ////           "start %f, ", ch->start * av_q2d(ch->time_base));
+    ////    av_log(NULL, AV_LOG_INFO,
+    ////           "end %f\n", ch->end * av_q2d(ch->time_base));
 
-        dump_metadata(NULL, ch->metadata, "      ");
-    }
+    ////    dump_metadata(NULL, ch->metadata, "    ");
+    ////}
 
     if (ic->nb_programs) {
         int j, k, total = 0;

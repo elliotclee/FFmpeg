@@ -858,6 +858,7 @@ static const StreamType HLS_SAMPLE_ENC_types[] = {
 static const StreamType REGD_types[] = {
     { MKTAG('d', 'r', 'a', 'c'), AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_DIRAC },
     { MKTAG('A', 'C', '-', '3'), AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AC3   },
+    { MKTAG('A', 'C', '-', '4'), AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AC4   },
     { MKTAG('B', 'S', 'S', 'D'), AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_S302M },
     { MKTAG('D', 'T', 'S', '1'), AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_DTS   },
     { MKTAG('D', 'T', 'S', '2'), AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_DTS   },
@@ -2105,6 +2106,13 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
                     av_dict_set(&st->metadata, "language", language, 0);
             }
         }
+        if (ext_desc_tag == 0x15) { /* AC-4 descriptor */
+            st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+            st->codecpar->codec_id = AV_CODEC_ID_AC4;
+            sti->request_probe = AVPROBE_SCORE_STREAM_RETRY / 5;
+
+            sti->need_context_update = 1;
+        }
         break;
     case 0x6a: /* ac-3_descriptor */
         {
@@ -3336,6 +3344,7 @@ static int64_t mpegts_get_dts(AVFormatContext *s, int stream_index,
     MpegTSContext *ts = s->priv_data;
     AVPacket *pkt;
     int64_t pos;
+    int req_flags = s->skip_position ? AVINDEX_KEYFRAME : 0;
     int pos47 = ts->pos47_full % ts->raw_packet_size;
     pos = ((*ppos  + ts->raw_packet_size - 1 - pos47) / ts->raw_packet_size) * ts->raw_packet_size + pos47;
     ff_read_frame_flush(s);
@@ -3350,7 +3359,7 @@ static int64_t mpegts_get_dts(AVFormatContext *s, int stream_index,
             av_packet_free(&pkt);
             return AV_NOPTS_VALUE;
         }
-        if (pkt->dts != AV_NOPTS_VALUE && pkt->pos >= 0) {
+        if (pkt->dts != AV_NOPTS_VALUE && pkt->pos >= 0 && (pkt->flags & req_flags || !req_flags)) {
             ff_reduce_index(s, pkt->stream_index);
             av_add_index_entry(s->streams[pkt->stream_index], pkt->pos, pkt->dts, 0, 0, AVINDEX_KEYFRAME /* FIXME keyframe? */);
             if (pkt->stream_index == stream_index && pkt->pos >= *ppos) {

@@ -1,6 +1,630 @@
 Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
+Emby Changes:
+
+*** 2023-06-25 ***
+
+- avformat/wavdec: fix the ID3 metadata obtained in WAV format's missing
+
+*** 2023-04-28 ***
+
+- configure: disable cuda ptx compression again
+- ffdetect_vaapi: Add AV1 detection
+
+*** 2023-04-18 ***
+
+- fix crash on armhf platforms
+
+*** 2023-04-15 ***
+
+- qsvdec: keep HDR side data for repeating in all frames
+
+*** 2023-04-06 ***
+
+- Fix scale_cuda filter (pink/grey screen issue)
+
+*** 2023-03-08 ***
+
+- ffdetect: Add AV1 detection for QSV and Nvidia
+
+*** 2023-02-21 ***
+
+- avcodec/nvdec: make explicit copy of frames (fix nvdec errors)
+
+*** 2023-01-20 ***
+
+- avcodec/vaapi_encode_h26x: passthrough A53 CC data as H264/HEVC SEI
+
+*** 2022-11-29 ***
+
+- avcodec/webvttdec: reset readorder when seeking back
+- fftools/ffmpeg: Update subtitle conversion error message
+- avformat/webvttdec: Set timebase statically depending on prefer_hls_mpegts_pts option
+- avformat/hls: Don't load all subtitle stream segments on startup
+- avformat/webvttdec: Add support for HLS WebVTT
+- avformat/hls: Add subtitle support for demuxing
+
+*** 2022-10-18 ***
+
+- ftools/opt_common: Print filter input/output formats in help output
+- avfilter/avfilter: add avfilter_print_config_formats()
+
+*** 2022-10-11 ***
+
+- VAAPI: fix mapping between VAAPI and QuickSync
+- avfilter/subfeed: don't balance in repeat mode
+- overlay_vaapi: fix segfault when secondary input is empty
+- overlay_vaapi: add framesync options
+- overlay_vaapi: enable pixel alpha blending
+- overlay_vaapi: enable expressions for overlay parameters
+- fftools/opt_common: Print filter input/output formats in help output
+- fftools/ffmpeg: move EXIT message, fix last line output
+
+*** 2022-10-01 ***
+
+- ffmpeg_filter: fix subtitle trim param
+- vf_overlaytextsubs: fix aspect ratio calculation
+- vf_overlaytextsubs: properly initialize output image
+
+*** 2022-09-13 ***
+
+- avfilter/textsub2video: avoid output delay when render_latest_only is enabled
+- avfilter/splitcc: fix realtime scatter mode
+
+*** 2022-09-11 ***
+
+- fftools/ffmpeg_filter: trim subtitle streams by end pts, not duration
+- fftools/ffmpeg: set subtitle filter format early
+
+*** 2022-09-07 ***
+
+- Fix AC4 audio decoding
+- avfilter/scale_qsv: fix height alignment issue
+
+*** 2022-08-13 ***
+
+- Skip qsv device check
+- avfilter/hwmap,hwupload: use new av_hwdevice_ctx_get_or_create_derived() function
+- fftools/ffmpeg_hw: use new av_hwdevice_ctx_get_or_create_derived() function
+
+*** 2022-08-01 ***
+
+- Update base version to ffmpeg 5.1
+
+*** 2022-06-28 ***
+
+- Update based on ffmpeg June 22
+- Include latest subtitle filtering updates
+- fix CPU, OpenCL and CUDA tone mapping after upstream changes
+- fix artifacts in HEVC decoding with hevc_qsv, hevc_cuvid, hevc_rkmpp, hevc_v4l2, etc.
+- fix frame drops after re-applying skiplist extraction
+
+*** 2022-06-12 ***
+
+- avformat/mpegts: use keyframe seeking with skip-list extraction
+- fftools/ffprobe: provide full output for subtitle frames
+- change repeated subtitle log level
+
+*** 2022-06-02 ***
+
+- ffmpeg: fix quick skip extraction
+
+*** 2022-05-28 ***
+
+- Starting the rel2 branch based on the very latest ffmpeg (5.0.1+)
+
+*** 2022-05-27 ***
+
+- extradata: fix extradata handling for NDK encoders
+
+*** 2022-05-07 ***
+
+- avformat/segment: fix segfault due to extradata double free
+
+*** 2022-05-05 ***
+
+- avformat/id3v2: avoid endless loop with invalid mp3 files
+
+*** 2022-05-04 ***
+
+- fftools/ffmpeg: Don't postpone output stream initialization for subtitle streams
+- avcodec/qsvdec: Temporarily disable HDR SEI decoding to avoid flickering
+
+*** 2022-04-14 ***
+
+- fftools/ffmpeg: add null check when flushing subtitle filters
+- fftools/ffmpeg_opt: activate subtitle kickoff on init
+
+*** 2022-04-10 ***
+
+- Fix deriving devices from QSV to OpenCL on Linux
+
+*** 2022-04-02 ***
+
+- Fix mediacodecndk issues with 4.4, 4.5, 5.0
+
+*** 2022-03-19 ***
+
+- fftools/ffmpeg: fix retrieval of output subtitle format
+- avcodec/qsvdec: Apply better workaround for MSDK SEI payload bugs
+
+*** 2022-03-11 ***
+
+- libzvbi: set subtitle type
+- subfeed: Fix emission logic
+- ffmpeg: Update kickoff
+
+*** 2022-02-20 ***
+
+- avformat/dump: Re-Add print stream start offsets for input streams
+- avformat/hlsenc: Add 'SegmentComplete' and 'InitFileComplete' logging
+- fftools/ffmpeg: add subtitle_kickoff to avoid filter stalling
+- ffmpeg_filter/filter_is_buffersrc: add sbuffersrc
+- fftools/filterwriters: add more filtergraph output
+
+*** 2022-01-26 ***
+
+- avutil/ass_split: Fix ass parsing of style codes with comments
+- avcodec/qsvdec: increase SEI buffers, don't fail on SEI parse errors (#2)
+
+*** 2022-01-16 ***
+
+- avfilter/avfilter: Disable frame size asserts
+- avcodec/qsvdec: increase SEI buffers, don't fail on SEI parse errors
+- hevcdec/ff_set_side_data: check context
+
+*** 2022-01-14 ***
+
+- rebased to ffmpeg 5.0
+- lots of subtitle filterin updates
+- avformat/hlsenc: Fix path handling for Windows
+
+*** 2022-01-07 ***
+
+- avfilter/vpp_qsv: fix regression on older api versions (updated fix)
+
+*** 2022-01-02 ***
+
+- avfilter/vpp_qsv: fix regression on older api versions (e.g. 1.11)
+
+*** 2021-12-31 ***
+
+- avfilter/textmod,stripstyles: set outlink properties
+- fftools/ffmpeg: ignore duplicate subtitle frames
+- vf_overlaytextsubs: ensure equal in/out video formats
+- vf_overlaygraphicsubs: use 1x1 output frame size as long as
+  subtitle size is unknown (0x0)
+- decode: set subtitle frame size from decoding context
+- ffmpeg: re-init graph when subtitle size changes
+- ffmpeg_filter: always insert subscale filter for sub2video compatibility
+
+*** 2021-12-10 ***
+
+- Fix CC decoding when starting from non-keyframe positions
+- dvbsubdec: Fix conditions for fallback to default resolution
+- Add qsc avc high10 profile to ffdetect
+- avutil/ass_split: Add parsing of hard-space tags (\h)
+- avcodec/webvttenc: convert hard-space tags to &nbsp;
+
+*** 2021-12-02 ***
+
+- Add scatter_realtime_output option to splitcc
+
+*** 2021-11-30 ***
+
+- Add SEI side data parsing for QSV decoders (CC and HDR data)
+- Fix transport of CC data in vpp_qsv and overlay_qsv
+- Fixes for CC overlay
+- Fixed parsing duplicate ID3 tags
+- Added VAAPI overlay filter
+
+*** 2021-11-27 ***
+
+- New base version
+- Updated subtitle filtering
+- Fixed parsing duplicate ID3 tags
+- Added VAAPI overlay filter
+
+*** 2021-11-16 ***
+
+- Fix cuda tonemap
+
+*** 2021-11-14 ***
+
+- Fix cuda tonemap build
+- Fix splitcc filter dependency
+
+*** 2021-11-2 ***
+
+- Fix skip-list and skip-interval extraction after upstream changes
+
+*** 2021-10-20 ***
+
+- Fix for ffmpeg not geting exited in case of an unrecoverable decoder error.
+- fftools/ffprobe: print size of attachment streams
+- subtitle_heartbeat: only beat on video streams timing
+- subtitle_heartbeat: propagate beat over all input files
+- overlay textsubs
+  reworked to support hwa scenarios
+- remove redundant loop in ffmpeg
+
+*** 2021-10-16 ***
+
+- Fix issue with QSV overlay
+- Use result caching in subscale filter
+- log subtitle heartbeat actions
+- overlay text subs: wait for non-empty subtitle frame bevor processing header
+- fix subtitle heartbeat 
+
+*** 2021-10-11 ***
+
+- Update subtitle filtering
+- Fix cc detection on ffprobe
+- Fixes for AC-4 decoding
+
+*** 2021-10-02 ***
+
+- Rebase on top of ffmpeg master (approaching 4.5.0)
+- Add new subtitle filtering
+
+*** 2021-08-23 ***
+
+- id3v2: Separate multi-values by semicolon
+- fix AC-4 decoder
+
+*** 2021-08-11 ***
+
+- id3v2: Read full null seperated list for text info frames
+- add AC-4 decoder
+- ASF: Fix regression bug when reading image attachments
+- Fix some QSV params
+- Improve deriving hw devices
+
+*** 2021-08-03 ***
+
+- Support QSV decoder initialization via init_hw_device (Intel patch)
+- Fixes for overlay_qsv
+- Add superscale_cuda (CUDA scaling with format conversion)
+
+*** 2021-07-27 ***
+
+- Rebase on top of ffmpeg 4.4
+
+*** 2021-02-21 ***
+
+- Reduce banding in regular tonemap_opencl filter
+- Get OpenCL on Linux working with surface sharing
+
+*** 2021-02-20 ***
+
+- More detailed VAAPI filter detection
+- Add supertonemap_opencl filter
+
+*** 2021-02-15 ***
+
+- Again: Even more tone mapping updates
+
+*** 2021-02-10 ***
+
+- Lots of tone mapping updates
+- avfilter/tonemap_vaapi: set color standard explicit
+- Remove OpenCL build options
+- ffdetect device lookup - use env variable for PCI DB (PCI_IDS_PATH)
+- Fix define checks
+- Fix tonemap_cuda
+
+*** 2021-02-08 ***
+
+- Fixes for tonemap_vaapi
+- ffdetect: Implement VAAPI filter detection (for checking HDHR HWA)
+- Merge a lot of upstream updates for HDR10+ and Dolby Vision
+- ffprobe: Enable output of side data, e.g. HDR
+- Improve OpenCL for Linux
+- ffdetect: Fix QuickSync Detection on Linux
+
+*** 2021-02-04 ***
+
+- SuperToneMap: Fix algorithm flaw
+
+*** 2021-02-01 ***
+
+- Implement SuperToneMap using intrinsics
+- Fixes for QuickSync
+
+*** 2021-01-29 ***
+
+- Improvements for QuickSync/DX11
+- Implement texture sharing between OpenCL and QuickSync/DX11
+- Optimized tonemap_opencl
+- Fix ffdetect crash
+
+*** 2021-01-20 ***
+
+- Tune supertonemap performance
+
+*** 2021-01-08 ***
+
+- Fix MediaCodecNdk profile and level defaults
+- Decode/MediaCodecNdk - add missing packet unref
+- Update hevc_mp4toannexb_bsf
+
+*** 2021-01-07 ***
+
+- Merge recent ffmpeg updates
+- Add tonemap_vaapi
+
+*** 2021-01-06 ***
+
+- Add supertonemap and cuda tonemap filters
+
+*** 2020-05-23 ***
+
+- Work around a bug in MSDK where VPP processing hangs under certain conditions
+
+*** 2020-02-24 ***
+
+- Segmenter: Fix log message causing problems on certain platforms (e.g. RPi)
+
+*** 2020-02-11 ***
+
+- MediaCodec: Fix potential memory leak
+
+*** 2020-02-08 ***
+
+- Improve filter graph output
+
+*** 2020-02-07 ***
+
+- Enable format conversion in scale_cuda
+
+*** 2020-02-05 ***
+
+- Print bit depth when executing 'ffmpeg -pix_fmts'
+- Fix sample aspect ratio when scaling in hardware
+- Fix QuickSync D3D11 in partial hw context
+- Fix QuickSync D3D11 in derived hw context
+- Fix hwdownload problem with QuickSync VPP
+
+*** 2020-01-31 ***
+
+- Add min_frame_time option to segmenter
+- Fix reporting values (restrict calculation to first output)
+- Fix ID3v2 tag genre parsing
+- Fix AMF compilation issue
+- ffdetect_qsv: Fix compiler warnings
+
+*** 2020-01-27 ***
+
+- Fix various QuickSync issues
+
+*** 2020-01-01 ***
+
+- Update libs:
+  - ffnvcodec: 8.1.24.11
+  - libmfx: 1.31
+  - libx264: 159
+  - libx265: 3.2
+  - libvpx: 1.8.2
+- Fix graph output bug
+
+*** 2019-12-26 ***
+
+- Catch up with ffmpeg master
+- Add option for filtergraph output
+- Print filter input/output formats in help output
+
+*** 2019-11-09 ***
+
+- Fix QuickSync issues with DX11 and VAAPI
+
+*** 2019-09-20 ***
+
+- Revert recent qsv changes
+
+*** 2019-09-07 ***
+
+- Fix QSV with D3D11
+- Fix log timing
+
+*** 2019-09-03 ***
+
+- Skip-Option: Change level of output timestamp logging to 'info'
+- Reduce cases of delayed header writing
+- Update internal lib versions
+- Extend codec profiles for VAAPI detection
+- Fix detection of multiple Nvidia devices
+- Remove non-negative constraing from segment_time_delta
+
+*** 2019-09-02 ***
+
+- Remove warning about 'initial_offset'
+- Fix delayed VTT segment generation (flofobel case)
+- Remove earlier time logging (obsolete now)
+- Add option to log timing
+- avformat/segment: fix segment_time_delta option min/max value
+
+*** 2019-08-30 ***
+
+- Catch up with latest ffmppeg
+
+*** 2019-07-25 ***
+
+- ffprobe: Fix program exit for Android
+
+*** 2019-04-09 ***
+
+- ffmpeg: Flush buffers before seeking for skip_interval
+- ffmpeg: Fix duplicate images during extraction
+- ffmpeg: Reapply "Fix writing headers"
+
+*** 2019-03-26 ***
+
+- ffmpeg: skip_inteval - Improve image extraction
+- ffmpeg: skip_list - Add skip_list option
+
+*** 2019-03-24 ***
+
+- ffmpeg: skip_inteval - Fix timing calculations for videos using special time_base
+- ffmpeg: skip_inteval - Fall back to dts when pts is unavailable
+
+*** 2019-03-16 ***
+
+- Segmenter: Add drop_partial_offset option
+- Segmenter: Add segment_limit option
+- SegmentComplete output: Fix segment index of first segment, show segment frame count
+- Remove Plex patch for 'delayed header writing'
+- hlsenc, segmenter: Improve SegmentComplete output
+
+*** 2019-03-12 ***
+
+- ffmpeg: hlsenc, segmenter: Log information about written segments
+- Fix Linux/clang builds
+
+*** 2019-03-06 ***
+
+- ffmpeg: D3D11VA: Implement multi-texture allocation for render target bindings
+- ffmpeg: Improve D3D11 Support for QuickSync
+- ffmpeg: Reduce default banner output
+- ffmpeg: Print execution timings
+- ffmpeg: Output log message when interactive q command is received
+
+*** 2019-03-01 ***
+
+- ffmpeg: Add D3D11 Support for QuickSync
+- ffdetect: Add QuickSync detection via D3D11
+- ffdetect: Fix D3D11 output for AMF
+- ffdetect: Add D3D11 disable flag
+
+*** 2019-02-23 ***
+
+- Statistics: Fix speed calculation, output size and bitrate
+- Suppress printing metadata tags with underscore prefix
+- Print codec level and stream start offsets for input streams
+- Suppress printing of chapter information (ffmpeg)
+- Segment muxer: Add segment_write_temp option
+
+*** 2019-02-22 ***
+
+- Update Nvidia codecs
+- Build with cuda filters included
+
+*** 2019-02-19 ***
+
+- Add hevc_mediacodecndk_encoder
+
+*** 2019-02-18 ***
+
+ffdetect: Fix detection of allowed resolutions for qsv encoders
+
+*** 2019-02-17 ***
+
+Enable CUDA-SDK
+Include libx265
+
+*** 2019-02-16 ***
+
+ffmpeg: Fix for using skip_interval option with multiple outputs
+ffdetect: Release encoder after querying for capabilities
+ffdetect: Fix some AMF detection problems
+ffprobe: Do not dump extra data for attachment streams
+
+*** 2019-02-14 ***
+Back-ported a number of hw acceleration commits:
+    Integrate updates for QuickSync
+    Integrate updates for VAAPI
+    Updated overlay filter adding x86 assembler implementation
+    Update yadif filter
+    Added yadif_cuda filter
+    Fix for all frames being encoded as keyframes when copyts is used
+
+*** 2019-01-21 ***
+
+Add skip_interval option for high-speed image extraction
+Disable output buffering for ffdetect and ffprobe
+Update to libMfx version 1.27
+Update to latest ffnvcodec for CUDA 8.1.24.7
+
+*** 2019-01-10 ***
+
+Rebase to ffmpeg 4.0.3
+
+*** 2018-12-09 ***
+
+Extend AMF detection to use both D3D9 and DX11
+
+*** 2018-12-07 ***
+
+Fix qsv encoder detection
+
+*** 2018-12-04 ***
+
+Check existence of hevc decoding plugin for QuickSync
+
+ffdetect: Fix compilation with libva1
+
+*** 2018-11-26 ***
+
+ffdetect: Fix compilation with libva1
+
+*** 2018-11-21 ***
+
+ffdetect: A few fixes for QSV and VAAPI detection on Linux
+
+*** 2018-11-18 ***
+
+ffdetect: Added additional paths for pci.ids
+
+*** 2018-11-14 ***
+
+Added ffdetect
+
+
+*** 2018-10-29 ***
+
+Cherry-pick various fixes for QSV
+
+
+*** 2018-09-19 ***
+
+MediaCodecNdk Decoders
+- Allow specifying decoder name
+- Improved logging
+- Adding workarounds for specific decoders (nvidia, amlogic, k3, qualcomm)
+- Log output format details
+- Handle crop values
+- Add support for additional color output formats (from decoders)
+- Disable MediaCodec decoders for probing
+- Use native mechanism for bitstream filters
+- Improve codec naming
+- Print specified MediaCodec codec name
+
+MediaCodecNdk H.264 Encoder
+- Allow specifying encoder name
+- Enable setting encoding profile and level parameters
+
+*** 2018_09_13 ***
+
+- add flag to fill unset timestamps from wallclock offset
+- add flag to discard timestamps on corrupted frames
+
+*** 2018_09_04 ***
+
+- Implement throttling
+
+*** 2018_08_28 ***
+
+- Flush stdout on exit
+- Use quick_exit on Android for program termination
+- Use libembymc instead of plex/nvidia stuff
+- Add hevc_mediacodecndk_decoder
+- h264 parser: Set sample aspect ratio
+- Fix writing headers
+- h264 BSF: fix IDR NALs
+- Add send_packet handling
+
+*** End Emby ***
+
 version 5.1:
 - add ipfs/ipns protocol support
 - dialogue enhance audio filter

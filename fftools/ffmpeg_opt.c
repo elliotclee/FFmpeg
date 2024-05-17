@@ -177,9 +177,15 @@ float max_error_rate  = 2.0/3;
 char *filter_nbthreads;
 int filter_complex_nbthreads = 0;
 int vstats_version = 2;
+int print_graphs = 0;
+char* print_graphs_file = NULL;
+char* print_graphs_format = "json";
 int auto_conversion_filters = 1;
 int64_t stats_period = 500000;
 
+// Emby Custom
+int throttleMs = 0;
+// Emby End
 
 static int file_overwrite     = 0;
 static int no_file_overwrite  = 0;
@@ -230,6 +236,7 @@ static void init_options(OptionsContext *o)
     o->mux_max_delay  = 0.7;
     o->start_time     = AV_NOPTS_VALUE;
     o->start_time_eof = AV_NOPTS_VALUE;
+    o->skip_interval  = AV_NOPTS_VALUE;
     o->recording_time = INT64_MAX;
     o->limit_filesize = UINT64_MAX;
     o->chapters_input_file = INT_MAX;
@@ -1053,6 +1060,7 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
                 av_log(NULL, AV_LOG_FATAL, "Invalid canvas size: %s.\n", canvas_size);
                 exit_program(1);
             }
+            ist->subtitle_kickoff.is_active = 1;
             break;
         }
         case AVMEDIA_TYPE_ATTACHMENT:
@@ -1143,6 +1151,63 @@ static void dump_attachment(AVStream *st, const char *filename)
     avio_write(out, st->codecpar->extradata, st->codecpar->extradata_size);
     avio_flush(out);
     avio_close(out);
+}
+
+static int parse_times(void *log_ctx, int64_t **times, int *nb_times, const char *times_str)
+{
+    char *p;
+    int i, ret = 0;
+    char *times_str1 = av_strdup(times_str);
+    char *saveptr = NULL;
+
+    if (!times_str1)
+        return AVERROR(ENOMEM);
+
+#define FAIL(err) ret = err; goto end
+
+    *nb_times = 1;
+    for (p = times_str1; *p; p++)
+        if (*p == ',')
+            (*nb_times)++;
+
+    *times = av_malloc_array(*nb_times, sizeof(**times));
+    if (!*times) {
+        av_log(log_ctx, AV_LOG_ERROR, "Could not allocate skip times array\n");
+        FAIL(AVERROR(ENOMEM));
+    }
+
+    p = times_str1;
+    for (i = 0; i < *nb_times; i++) {
+        int64_t t;
+        char *tstr = av_strtok(p, ",", &saveptr);
+        p = NULL;
+
+        if (!tstr || !tstr[0]) {
+            av_log(log_ctx, AV_LOG_ERROR, "Empty time specification in skip times list %s\n",
+                   times_str);
+            FAIL(AVERROR(EINVAL));
+        }
+
+        ret = av_parse_time(&t, tstr, 1);
+        if (ret < 0) {
+            av_log(log_ctx, AV_LOG_ERROR,
+                   "Invalid time duration specification '%s' in skip times list %s\n", tstr, times_str);
+            FAIL(AVERROR(EINVAL));
+        }
+        (*times)[i] = t;
+
+        /* check on monotonicity */
+        if (i && (*times)[i-1] > (*times)[i]) {
+            av_log(log_ctx, AV_LOG_ERROR,
+                   "Specified time %f is greater than the following time %f\n",
+                   (float)((*times)[i])/1000000, (float)((*times)[i-1])/1000000);
+            FAIL(AVERROR(EINVAL));
+        }
+    }
+
+end:
+    av_free(times_str1);
+    return ret;
 }
 
 static int open_input_file(OptionsContext *o, const char *filename)
@@ -1317,6 +1382,10 @@ static int open_input_file(OptionsContext *o, const char *filename)
         } else
             av_log(NULL, AV_LOG_WARNING, "Cannot use -sseof, duration of %s not known\n", filename);
     }
+
+    if (o->skip_list_str && o->start_time == AV_NOPTS_VALUE)
+        o->start_time = 0;
+
     timestamp = (o->start_time == AV_NOPTS_VALUE) ? 0 : o->start_time;
     /* add the stream start time */
     if (!o->seek_timestamp && ic->start_time != AV_NOPTS_VALUE)
@@ -1364,6 +1433,18 @@ static int open_input_file(OptionsContext *o, const char *filename)
     f->nb_streams = ic->nb_streams;
     f->rate_emu   = o->rate_emu;
     f->accurate_seek = o->accurate_seek;
+    // Emby Custom
+
+    if ((o->skip_interval != AV_NOPTS_VALUE) && o->skip_list_str) {
+        av_log(NULL, AV_LOG_ERROR, "Options skip_interval and skip_list are mutually exclusive.");
+        exit_program(1);
+    }
+
+    f->skip_interval = o->skip_interval;
+
+    if (o->skip_list_str)
+        parse_times(NULL, &f->skip_times, &f->nb_skip_times, o->skip_list_str);
+
     f->loop = o->loop;
     f->duration = 0;
     f->time_base = (AVRational){ 1, 1 };
@@ -1675,7 +1756,8 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
     MATCH_PER_STREAM_OPT(disposition, str, ost->disposition, oc, st);
     ost->disposition = av_strdup(ost->disposition);
 
-    ost->max_muxing_queue_size = 128;
+//Emby Custom
+	ost->max_muxing_queue_size = 10000;
     MATCH_PER_STREAM_OPT(max_muxing_queue_size, i, ost->max_muxing_queue_size, oc, st);
 
     ost->muxing_queue_data_size = 0;
@@ -1769,11 +1851,15 @@ static char *get_ost_filters(OptionsContext *o, AVFormatContext *oc,
 
     if (ost->filters_script)
         return read_file(ost->filters_script);
-    else if (ost->filters)
+    if (ost->filters)
         return av_strdup(ost->filters);
 
-    return av_strdup(st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO ?
-                     "null" : "anull");
+    switch (st->codecpar->codec_type) {
+    case AVMEDIA_TYPE_VIDEO: return av_strdup("null");
+    case AVMEDIA_TYPE_AUDIO: return av_strdup("anull");
+    case AVMEDIA_TYPE_SUBTITLE: return av_strdup("snull");
+    default: av_assert0(0); return NULL;
+    }
 }
 
 static void check_streamcopy_filters(OptionsContext *o, AVFormatContext *oc,
@@ -2174,6 +2260,9 @@ static OutputStream *new_subtitle_stream(OptionsContext *o, AVFormatContext *oc,
 
     subtitle_enc->codec_type = AVMEDIA_TYPE_SUBTITLE;
 
+    MATCH_PER_STREAM_OPT(filter_scripts, str, ost->filters_script, oc, st);
+    MATCH_PER_STREAM_OPT(filters,        str, ost->filters,        oc, st);
+
     if (!ost->stream_copy) {
         char *frame_size = NULL;
 
@@ -2182,6 +2271,10 @@ static OutputStream *new_subtitle_stream(OptionsContext *o, AVFormatContext *oc,
             av_log(NULL, AV_LOG_FATAL, "Invalid frame size: %s.\n", frame_size);
             exit_program(1);
         }
+
+        ost->avfilter = get_ost_filters(o, oc, ost);
+        if (!ost->avfilter)
+            exit_program(1);
     }
 
     return ost;
@@ -2327,8 +2420,9 @@ static void init_output_filter(OutputFilter *ofilter, OptionsContext *o,
     switch (ofilter->type) {
     case AVMEDIA_TYPE_VIDEO: ost = new_video_stream(o, oc, -1); break;
     case AVMEDIA_TYPE_AUDIO: ost = new_audio_stream(o, oc, -1); break;
+    case AVMEDIA_TYPE_SUBTITLE: ost = new_subtitle_stream(o, oc, -1); break;
     default:
-        av_log(NULL, AV_LOG_FATAL, "Only video and audio filters are supported "
+        av_log(NULL, AV_LOG_FATAL, "Only video, audio and subtitle filters are supported "
                "currently.\n");
         exit_program(1);
     }
@@ -2733,7 +2827,8 @@ loop_end:
             ist->processing_needed = 1;
 
             if (ost->st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO ||
-                ost->st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+                ost->st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO ||
+                ost->st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
                 err = init_simple_filtergraph(ist, ost);
                 if (err < 0) {
                     av_log(NULL, AV_LOG_ERROR,
@@ -2778,6 +2873,10 @@ loop_end:
                 } else if (ost->enc->ch_layouts) {
                     f->ch_layouts = ost->enc->ch_layouts;
                 }
+                break;
+            case AVMEDIA_TYPE_SUBTITLE:
+                f->format     = ost->enc_ctx->subtitle_type;
+
                 break;
             }
         }
@@ -3653,6 +3752,13 @@ const OptionDef options[] = {
     { "sseof",          HAS_ARG | OPT_TIME | OPT_OFFSET |
                         OPT_INPUT,                                   { .off = OFFSET(start_time_eof) },
         "set the start time offset relative to EOF", "time_off" },
+    // Emby Custom
+    { "skip_interval", HAS_ARG | OPT_TIME | OPT_OFFSET | OPT_EXPERT |
+                        OPT_INPUT,                                   { .off = OFFSET(skip_interval) },
+        "interval to skip after each packet read", "" },
+    { "skip_list", HAS_ARG | OPT_STRING | OPT_OFFSET | OPT_EXPERT |
+                        OPT_INPUT,                                   { .off = OFFSET(skip_list_str) },
+        "comma-separated list of skip points", "" },
     { "seek_timestamp", HAS_ARG | OPT_INT | OPT_OFFSET |
                         OPT_INPUT,                                   { .off = OFFSET(seek_timestamp) },
         "enable/disable seeking by timestamp with -ss" },
@@ -3765,6 +3871,12 @@ const OptionDef options[] = {
         "create a complex filtergraph", "graph_description" },
     { "filter_complex_script", HAS_ARG | OPT_EXPERT,                 { .func_arg = opt_filter_complex_script },
         "read complex filtergraph description from a file", "filename" },
+    { "print_graphs",   OPT_BOOL,                                    { &print_graphs },
+        "prints filtergraph details to stderr" },
+    { "print_graphs_file", HAS_ARG | OPT_STRING,                     { &print_graphs_file },
+        "writes graph details to a file", "filename" },
+    { "print_graphs_format", OPT_STRING | HAS_ARG,                   { &print_graphs_format },
+      "set the output printing format (available formats are: default, compact, csv, flat, ini, json, xml)", "format" },
     { "auto_conversion_filters", OPT_BOOL | OPT_EXPERT,              { &auto_conversion_filters },
         "enable automatic conversion filters globally" },
     { "stats",          OPT_BOOL,                                    { &print_stats },

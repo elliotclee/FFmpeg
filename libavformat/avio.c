@@ -248,7 +248,7 @@ int ffurl_handshake(URLContext *c)
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"                \
     "0123456789+-."
 
-static const struct URLProtocol *url_find_protocol(const char *filename)
+const struct URLProtocol *avio_find_protocol(const char *filename)
 {
     const URLProtocol **protocols;
     char proto_str[128], proto_nested[128], *ptr;
@@ -295,7 +295,7 @@ int ffurl_alloc(URLContext **puc, const char *filename, int flags,
 {
     const URLProtocol *p = NULL;
 
-    p = url_find_protocol(filename);
+    p = avio_find_protocol(filename);
     if (p)
        return url_alloc_for_protocol(puc, p, filename, flags, int_cb);
 
@@ -466,7 +466,7 @@ int ffurl_close(URLContext *h)
 
 const char *avio_find_protocol_name(const char *url)
 {
-    const URLProtocol *p = url_find_protocol(url);
+    const URLProtocol *p = avio_find_protocol(url);
 
     return p ? p->name : NULL;
 }

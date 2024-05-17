@@ -617,7 +617,7 @@ static int asf_read_metadata(AVFormatContext *s)
         value_type = avio_rl16(pb); /* value_type */
         value_len  = avio_rl32(pb);
 
-        if (value_len < 0 || value_len > UINT16_MAX)
+        if (value_len < 0 || value_len > (INT32_MAX - 22))
             return AVERROR_INVALIDDATA;
 
         name_len_utf8 = 2*name_len_utf16 + 1;

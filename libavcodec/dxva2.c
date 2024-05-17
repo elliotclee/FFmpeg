@@ -565,10 +565,10 @@ static void ff_dxva2_lock(AVCodecContext *avctx)
         AVDXVAContext *ctx = DXVA_CONTEXT(avctx);
         if (D3D11VA_CONTEXT(ctx)->context_mutex != INVALID_HANDLE_VALUE)
             WaitForSingleObjectEx(D3D11VA_CONTEXT(ctx)->context_mutex, INFINITE, FALSE);
-        if (sctx->device_ctx) {
-            AVD3D11VADeviceContext *hwctx = sctx->device_ctx->hwctx;
-            hwctx->lock(hwctx->lock_ctx);
-        }
+        ////if (sctx->device_ctx) {
+        ////    AVD3D11VADeviceContext *hwctx = sctx->device_ctx->hwctx;
+        ////    hwctx->lock(hwctx->lock_ctx);
+        ////}
     }
 #endif
 }
@@ -581,10 +581,10 @@ static void ff_dxva2_unlock(AVCodecContext *avctx)
         AVDXVAContext *ctx = DXVA_CONTEXT(avctx);
         if (D3D11VA_CONTEXT(ctx)->context_mutex != INVALID_HANDLE_VALUE)
             ReleaseMutex(D3D11VA_CONTEXT(ctx)->context_mutex);
-        if (sctx->device_ctx) {
-            AVD3D11VADeviceContext *hwctx = sctx->device_ctx->hwctx;
-            hwctx->unlock(hwctx->lock_ctx);
-        }
+        ////if (sctx->device_ctx) {
+        ////    AVD3D11VADeviceContext *hwctx = sctx->device_ctx->hwctx;
+        ////    hwctx->unlock(hwctx->lock_ctx);
+        ////}
     }
 #endif
 }

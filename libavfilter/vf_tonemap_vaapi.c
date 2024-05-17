@@ -66,8 +66,14 @@ static int tonemap_vaapi_save_metadata(AVFilterContext *avctx, AVFrame *input_fr
 
         if (hdr_meta->has_luminance) {
             const int luma_den = 10000;
-            ctx->in_metadata.max_display_mastering_luminance =
-                lrint(luma_den * av_q2d(hdr_meta->max_luminance));
+
+            if (hdr_meta->max_luminance.num < hdr_meta->max_luminance.den) {
+                ctx->in_metadata.max_display_mastering_luminance = hdr_meta->max_luminance.num;
+            } else {
+                ctx->in_metadata.max_display_mastering_luminance =
+                    lrint(luma_den * av_q2d(hdr_meta->max_luminance));
+            }
+
             ctx->in_metadata.min_display_mastering_luminance =
                 FFMIN(lrint(luma_den * av_q2d(hdr_meta->min_luminance)),
                       ctx->in_metadata.max_display_mastering_luminance);
@@ -219,6 +225,21 @@ static int tonemap_vaapi_build_filter_params(AVFilterContext *avctx)
         return AVERROR(EINVAL);
     }
 
+    ////ctx->in_metadata.max_display_mastering_luminance = 50;
+    ////ctx->in_metadata.min_display_mastering_luminance = 40000000;
+
+    ////ctx->in_metadata.display_primaries_x[0] = 13250;
+    ////ctx->in_metadata.display_primaries_y[0] = 34500;
+
+    ////ctx->in_metadata.display_primaries_x[1] = 7500;
+    ////ctx->in_metadata.display_primaries_y[1] = 3000;
+
+    ////ctx->in_metadata.display_primaries_x[2] = 34000;
+    ////ctx->in_metadata.display_primaries_y[2] = 16000;
+
+    ////ctx->in_metadata.white_point_x = 15635;
+    ////ctx->in_metadata.white_point_y = 16450;
+
     hdrtm_param.type = VAProcFilterHighDynamicRangeToneMapping;
     hdrtm_param.data.metadata_type = VAProcHighDynamicRangeMetadataHDR10;
     hdrtm_param.data.metadata      = &ctx->in_metadata;
@@ -294,10 +315,11 @@ static int tonemap_vaapi_filter_frame(AVFilterLink *inlink, AVFrame *input_frame
     if (err < 0)
         goto fail;
 
-    if (vpp_ctx->nb_filter_buffers) {
-        params.filters = &vpp_ctx->filter_buffers[0];
-        params.num_filters = vpp_ctx->nb_filter_buffers;
-    }
+    params.filters     = &vpp_ctx->filter_buffers[0];
+    params.num_filters = 1;
+
+    params.surface_color_standard = VAProcColorStandardExplicit;
+    params.input_color_properties.transfer_characteristics = 16;
 
     err = ff_vaapi_vpp_render_picture(avctx, &params, output_frame);
     if (err < 0)

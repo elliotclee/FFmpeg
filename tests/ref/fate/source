@@ -1,4 +1,20 @@
 Files without standard license headers:
+fftools/filterwriters.c
+fftools/filterwriters.h
+hwdetect/detectutils.h
+hwdetect/device_lookup.c
+hwdetect/device_lookup.h
+hwdetect/ffdetect.c
+hwdetect/ffdetect_amf.c
+hwdetect/ffdetect_amf.h
+hwdetect/ffdetect_nv.c
+hwdetect/ffdetect_nv.h
+hwdetect/ffdetect_qsv.c
+hwdetect/ffdetect_qsv.h
+hwdetect/ffdetect_vaapi.c
+hwdetect/ffdetect_vaapi.h
+hwdetect/outputwriters.c
+hwdetect/outputwriters.h
 libavcodec/file_open.c
 libavcodec/ilbcdata.h
 libavcodec/ilbcdec.c
@@ -21,6 +37,15 @@ Headers without standard inclusion guards:
 compat/djgpp/math.h
 compat/float/float.h
 compat/float/limits.h
+hwdetect/detectutils.h
+hwdetect/device_lookup.h
+hwdetect/ffdetect_amf.h
+hwdetect/ffdetect_nv.h
+hwdetect/ffdetect_qsv.h
+hwdetect/ffdetect_vaapi.h
+hwdetect/outputwriters.h
+libavfilter/cuda/cl_compat.h
+libavfilter/dither_matrix.h
 tools/decode_simple.h
 Use of av_clip() where av_clip_uintp2() could be used:
 Use of av_clip() where av_clip_intp2() could be used:
