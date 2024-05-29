@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024 Institue of Software Chinese Academy of Sciences (ISCAS).
+ * Copyright © 2024 Rémi Denis-Courmont.
  *
  * This file is part of FFmpeg.
  *
@@ -41,6 +42,61 @@
         vsetivli        zero, \len, e16, m2, ta, ma
 .endif
 .endm
+
+#if __riscv_xlen >= 64
+func ff_vp8_luma_dc_wht_rvv, zve64x
+        vsetivli    zero, 1, e64, m1, ta, ma
+        vlseg4e64.v v4, (a1)
+        vsetivli    zero, 4, e16, mf2, ta, ma
+        vwadd.vv    v1, v5, v6
+        addi        t1, sp, -48
+        vwadd.vv    v0, v4, v7
+        addi        t2, sp, -32
+        vwsub.vv    v2, v5, v6
+        addi        t3, sp, -16
+        vwsub.vv    v3, v4, v7
+        addi        sp, sp, -64
+        vsetvli     zero, zero, e32, m1, ta, ma
+        vadd.vv     v4, v0, v1
+        vadd.vv     v5, v3, v2
+        vse32.v     v4, (sp)
+        vsub.vv     v6, v0, v1
+        vse32.v     v5, (t1)
+        vsub.vv     v7, v3, v2
+        vse32.v     v6, (t2)
+        vse32.v     v7, (t3)
+        vlseg4e32.v v4, (sp)
+        vadd.vv     v0, v4, v7
+        sd          zero,   (a1)
+        vadd.vv     v1, v5, v6
+        sd          zero,  8(a1)
+        vsub.vv     v2, v5, v6
+        sd          zero, 16(a1)
+        vsub.vv     v3, v4, v7
+        sd          zero, 24(a1)
+        vadd.vi     v0, v0, 3 # rounding mode not supported, do it manually
+        li          t0, 4 * 16 * 2
+        vadd.vi     v3, v3, 3
+        addi        t1, a0, 16 * 2
+        vadd.vv     v4, v0, v1
+        addi        t2, a0, 16 * 2 * 2
+        vadd.vv     v5, v3, v2
+        addi        t3, a0, 16 * 2 * 3
+        vsub.vv     v6, v0, v1
+        vsub.vv     v7, v3, v2
+        vsetvli     zero, zero, e16, mf2, ta, ma
+        vnsra.wi    v0, v4, 3
+        addi        sp, sp, 64
+        vnsra.wi    v1, v5, 3
+        vsse16.v    v0, (a0), t0
+        vnsra.wi    v2, v6, 3
+        vsse16.v    v1, (t1), t0
+        vnsra.wi    v3, v7, 3
+        vsse16.v    v2, (t2), t0
+        vsse16.v    v3, (t3), t0
+        ret
+endfunc
+#endif
 
 .macro vp8_idct_dc_add
         vlse32.v      v0, (a0), a2
@@ -108,9 +164,10 @@ endfunc
         vnsra.wi        \dst, v24, 3
 .endm
 
-.macro put_vp8_bilin_h_v len type mn
-func ff_put_vp8_bilin\len\()_\type\()_rvv, zve32x
-        vsetvlstatic8   \len
+.macro put_vp8_bilin_h_v type mn
+func ff_put_vp8_bilin4_\type\()_rvv, zve32x
+        vsetvlstatic8   4
+.Lbilin_\type:
         li              t1, 8
         li              t4, 4
         sub             t1, t1, \mn
@@ -126,9 +183,12 @@ func ff_put_vp8_bilin\len\()_\type\()_rvv, zve32x
 endfunc
 .endm
 
-.macro put_vp8_bilin_hv len
-func ff_put_vp8_bilin\len\()_hv_rvv, zve32x
-        vsetvlstatic8   \len
+put_vp8_bilin_h_v h a5
+put_vp8_bilin_h_v v a6
+
+func ff_put_vp8_bilin4_hv_rvv, zve32x
+        vsetvlstatic8   4
+.Lbilin_hv:
         li              t3, 8
         sub             t1, t3, a5
         sub             t2, t3, a6
@@ -149,7 +209,23 @@ func ff_put_vp8_bilin\len\()_hv_rvv, zve32x
 
         ret
 endfunc
-.endm
+
+.irp len,16,8
+func ff_put_vp8_bilin\len\()_h_rvv, zve32x
+        vsetvlstatic8 \len
+        j             .Lbilin_h
+endfunc
+
+func ff_put_vp8_bilin\len\()_v_rvv, zve32x
+        vsetvlstatic8 \len
+        j             .Lbilin_v
+endfunc
+
+func ff_put_vp8_bilin\len\()_hv_rvv, zve32x
+        vsetvlstatic8 \len
+        j             .Lbilin_hv
+endfunc
+.endr
 
 const subpel_filters
         .byte 0,  -6, 123,  12,  -1, 0
@@ -162,15 +238,14 @@ const subpel_filters
 endconst
 
 .macro epel_filter size type regtype
-        lla             \regtype\()2, subpel_filters
 .ifc \type,v
         addi            \regtype\()0, a6, -1
 .else
         addi            \regtype\()0, a5, -1
 .endif
-        li              \regtype\()1, 6
-        mul             \regtype\()0, \regtype\()0, \regtype\()1
-        add             \regtype\()0, \regtype\()0, \regtype\()2
+        lla             \regtype\()2, subpel_filters
+        sh1add          \regtype\()0, \regtype\()0, \regtype\()0
+        sh1add          \regtype\()0, \regtype\()0, \regtype\()2
         .irp n,1,2,3,4
         lb              \regtype\n, \n(\regtype\()0)
         .endr
@@ -182,24 +257,33 @@ endconst
 
 .macro epel_load dst len size type from_mem regtype
 .ifc \type,v
-        mv              a5, a3
+        sub             t6, a2, a3
+        add             a7, a2, a3
 .else
-        li              a5, 1
+        addi            t6, a2, -1
+        addi            a7, a2, 1
 .endif
-        sub             t6, a2, a5
-        add             a7, a2, a5
 
 .if \from_mem
         vle8.v          v24, (a2)
         vle8.v          v22, (t6)
         vle8.v          v26, (a7)
-        add             a7, a7, a5
+.ifc \type,v
+        add             a7, a7, a3
+.else
+        addi            a7, a7, 1
+.endif
         vle8.v          v28, (a7)
         vwmulu.vx       v16, v24, \regtype\()2
         vwmulu.vx       v20, v26, \regtype\()3
 .ifc \size,6
-        sub             t6, t6, a5
-        add             a7, a7, a5
+.ifc \type,v
+        sub             t6, t6, a3
+        add             a7, a7, a3
+.else
+        addi            t6, t6, -1
+        addi            a7, a7, 1
+.endif
         vle8.v          v24, (t6)
         vle8.v          v26, (a7)
         vwmaccu.vx      v16, \regtype\()0, v24
@@ -314,9 +398,6 @@ endfunc
 .endm
 
 .irp len,16,8,4
-put_vp8_bilin_h_v \len h a5
-put_vp8_bilin_h_v \len v a6
-put_vp8_bilin_hv \len
 epel \len 6 h
 epel \len 4 h
 epel \len 6 v
