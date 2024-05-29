@@ -197,13 +197,20 @@ static int libopus_check_vorbis_layout(AVCodecContext *avctx, int mapping_family
         av_log(avctx, AV_LOG_WARNING,
                "No channel layout specified. Opus encoder will use Vorbis "
                "channel layout for %d channels.\n", avctx->ch_layout.nb_channels);
-    } else if (av_channel_layout_compare(&avctx->ch_layout, &ff_vorbis_ch_layouts[avctx->ch_layout.nb_channels - 1])) {
-        char name[32];
+    } else {
+      char name[32];
+      int i;
+      
+      for (i = 0; i < FF_ARRAY_ELEMS(ff_vorbis_ch_layouts); i++) {
+	if (ff_vorbis_ch_layouts[i].nb_channels && av_channel_layout_compare(&avctx->ch_layout, &ff_vorbis_ch_layouts[i]) == 0) {
+	  return 0;
+	}
+      }
 
-        av_channel_layout_describe(&avctx->ch_layout, name, sizeof(name));
-        av_log(avctx, AV_LOG_ERROR,
-               "Invalid channel layout %s for specified mapping family %d.\n",
-               name, mapping_family);
+      av_channel_layout_describe(&avctx->ch_layout, name, sizeof(name));
+      av_log(avctx, AV_LOG_ERROR,
+	     "Invalid channel layout %s for specified mapping family %d.\n",
+	     name, mapping_family);
 
         return AVERROR(EINVAL);
     }

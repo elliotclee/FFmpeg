@@ -34,7 +34,7 @@ const uint8_t ff_vorbis_channel_layout_offsets[8][8] = {
     { 0, 2, 1, 7, 5, 6, 3, 4 },
 };
 
-const AVChannelLayout ff_vorbis_ch_layouts[9] = {
+const AVChannelLayout ff_vorbis_ch_layouts[11] = {
     AV_CHANNEL_LAYOUT_MONO,
     AV_CHANNEL_LAYOUT_STEREO,
     AV_CHANNEL_LAYOUT_SURROUND,
