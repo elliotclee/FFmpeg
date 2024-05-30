@@ -202,7 +202,7 @@ static int libopus_check_vorbis_layout(AVCodecContext *avctx, int mapping_family
       int i;
       
       for (i = 0; i < FF_ARRAY_ELEMS(ff_vorbis_ch_layouts); i++) {
-	if (ff_vorbis_ch_layouts[i].nb_channels && av_channel_layout_compare(&avctx->ch_layout, &ff_vorbis_ch_layouts[i]) == 0) {
+	if (av_channel_layout_compare(&avctx->ch_layout, &ff_vorbis_ch_layouts[i]) == 0) {
 	  return 0;
 	}
       }

@@ -70,7 +70,17 @@ static av_cold int libopus_decode_init(AVCodecContext *avc)
         avc->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
         avc->ch_layout.nb_channels = channels;
     } else {
-        av_channel_layout_copy(&avc->ch_layout, &ff_vorbis_ch_layouts[channels - 1]);
+        int i;
+        for (i = 0; i < FF_ARRAY_ELEMS(ff_vorbis_ch_layouts); i++) {
+	  if (ff_vorbis_ch_layouts[i].nb_channels == channels) {
+	    av_channel_layout_copy(&avc->ch_layout, &ff_vorbis_ch_layouts[i]);
+	    break;
+	  }
+	}
+	if (i == FF_ARRAY_ELEMS(ff_vorbis_ch_layouts)) {
+	  av_log(avc, AV_LOG_ERROR, "Appropriate channel mapping not found.\n");
+	  return AVERROR(EINVAL);
+	}
     }
 
     if (avc->extradata_size >= OPUS_HEAD_SIZE) {
