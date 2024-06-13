@@ -1315,6 +1315,8 @@ static int ebml_parse(MatroskaDemuxContext *matroska,
                     matroska->num_levels--;
                     return LEVEL_ENDED;
                 }
+                // We have not encountered a known element; syntax is a sentinel.
+                av_assert1(syntax->type == EBML_NONE);
             };
         }
 
@@ -4208,7 +4210,7 @@ static int matroska_parse_cluster(MatroskaDemuxContext *matroska)
     MatroskaBlock     *block = &cluster->block;
     int res;
 
-    av_assert0(matroska->num_levels <= 2);
+    av_assert0(matroska->num_levels <= 2U);
 
     if (matroska->num_levels == 1) {
         res = ebml_parse(matroska, matroska_segment, NULL);

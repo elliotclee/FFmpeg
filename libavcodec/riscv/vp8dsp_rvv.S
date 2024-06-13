@@ -98,64 +98,163 @@ func ff_vp8_luma_dc_wht_rvv, zve64x
 endfunc
 #endif
 
-.macro vp8_idct_dc_add
-        vlse32.v      v0, (a0), a2
-        lh            a5, 0(a1)
-        sh            zero, 0(a1)
-        addi          a5, a5, 4
-        srai          t1, a5, 3
-        vsetivli      zero, 4*4, e16, m2, ta, ma
-        vzext.vf2     v2, v0
-        vadd.vx       v2, v2, t1
-        vmax.vx       v2, v2, zero
-        vsetvli       zero, zero, e8, m1, ta, ma
-        vnclipu.wi    v0, v2, 0
-        vsetivli      zero, 4, e8, mf4, ta, ma
-        vsse32.v      v0, (a0), a2
-.endm
-
-.macro vp8_idct_dc_addy
-        vp8_idct_dc_add
-        addi          a0, a0, 4
-        addi          a1, a1, 32
-.endm
+func ff_vp8_idct_add_rvv, zve32x
+        csrwi       vxrm, 0
+        vsetivli    zero, 4, e16, mf2, ta, ma
+        addi        a3, a1, 1 * 4 * 2
+        addi        a4, a1, 2 * 4 * 2
+        addi        a5, a1, 3 * 4 * 2
+        li          t1, 20091
+        li          t2, 35468
+        jal         t0, 1f
+        vsseg4e16.v v0, (a1)
+        jal         t0, 1f
+        vlsseg4e8.v v4, (a0), a2
+        vssra.vi    v0, v0, 3
+        sd          zero,   (a1)
+        vssra.vi    v1, v1, 3
+        sd          zero,  8(a1)
+        vssra.vi    v2, v2, 3
+        sd          zero, 16(a1)
+        vssra.vi    v3, v3, 3
+        sd          zero, 24(a1)
+        vsetvli     zero, zero, e8, mf4, ta, ma
+        vwaddu.wv   v0, v0, v4
+        vwaddu.wv   v1, v1, v5
+        vwaddu.wv   v2, v2, v6
+        vwaddu.wv   v3, v3, v7
+        vsetvli     zero, zero, e16, mf2, ta, ma
+        vmax.vx     v0, v0, zero
+        vmax.vx     v1, v1, zero
+        vmax.vx     v2, v2, zero
+        vmax.vx     v3, v3, zero
+        vsetvli     zero, zero, e8, mf4, ta, ma
+        vnclipu.wi  v4, v0, 0
+        vnclipu.wi  v5, v1, 0
+        vnclipu.wi  v6, v2, 0
+        vnclipu.wi  v7, v3, 0
+        vssseg4e8.v v4, (a0), a2
+        ret
+1:
+        vle16.v    v0, (a1)
+        vle16.v    v2, (a4)
+        vle16.v    v1, (a3)
+        vle16.v    v3, (a5)
+        vadd.vv    v4, v0, v2 # t0
+        vsub.vv    v5, v0, v2 # t1
+        vmulhsu.vx v8, v3, t1
+        vmulhsu.vx v6, v1, t2
+        vadd.vv    v8, v8, v3
+        vmulhsu.vx v7, v1, t1
+        vmulhsu.vx v9, v3, t2
+        vadd.vv    v7, v7, v1
+        vsub.vv    v6, v6, v8 # t2
+        vadd.vv    v7, v7, v9 # t3
+        vadd.vv    v1, v5, v6
+        vsub.vv    v2, v5, v6
+        vadd.vv    v0, v4, v7
+        vsub.vv    v3, v4, v7
+        jr         t0
+endfunc
 
 func ff_vp8_idct_dc_add_rvv, zve32x
-        vsetivli      zero, 4, e8, mf4, ta, ma
-        vp8_idct_dc_add
+        lh      a3, (a1)
+        addi    a3, a3, 4
+        srai    a3, a3, 3
+        # fall through
+endfunc
 
+# a3 = DC
+func ff_vp78_idct_dc_add_rvv, zve32x
+        csrwi      vxrm, 0
+        vsetivli   zero, 4, e8, mf4, ta, ma
+        sh         zero, (a1)
+        vlse32.v   v8, (a0), a2
+        vsetivli   zero, 16, e16, m2, ta, ma
+        vzext.vf2  v16, v8
+        vadd.vx    v16, v16, a3
+        vmax.vx    v16, v16, zero
+        vsetvli    zero, zero, e8, m1, ta, ma
+        vnclipu.wi v8, v16, 0
+        vsetivli   zero, 4, e8, mf4, ta, ma
+        vsse32.v   v8, (a0), a2
         ret
 endfunc
 
 func ff_vp8_idct_dc_add4y_rvv, zve32x
-        vsetivli      zero, 4, e8, mf4, ta, ma
-        .rept 3
-        vp8_idct_dc_addy
-        .endr
-        vp8_idct_dc_add
+        li       t0, 32
+        vsetivli zero, 4, e16, mf2, ta, ma
+        li       t1, 4 - (128 << 3)
+        vlse16.v v8, (a1), t0
+        vadd.vx  v8, v8, t1
+        vsra.vi  v8, v8, 3
+        # fall through
+endfunc
+
+        .variant_cc ff_vp78_idct_dc_add4y_rvv
+# v8 = [dc0 - 128, dc1 - 128, dc2 - 128, dc3 - 128]
+func ff_vp78_idct_dc_add4y_rvv, zve32x
+        vsetivli    zero, 16, e16, m2, ta, ma
+        vid.v       v4
+        li          a4, 4
+        vsrl.vi     v4, v4, 2
+        li          t1, 128
+        vrgather.vv v0, v8, v4 # replicate each DC four times
+        vsetvli     zero, zero, e8, m1, ta, ma
+1:
+        vle8.v      v8, (a0)
+        addi        a4, a4, -1
+        vwaddu.wv   v16, v0, v8
+        sh          zero, (a1)
+        vnclip.wi   v8, v16, 0
+        addi        a1, a1, 32
+        vxor.vx     v8, v8, t1
+        vse8.v      v8, (a0)
+        add         a0, a0, a2
+        bnez        a4, 1b
 
         ret
 endfunc
 
 func ff_vp8_idct_dc_add4uv_rvv, zve32x
-        vsetivli      zero, 4, e8, mf4, ta, ma
-        vp8_idct_dc_addy
-        vp8_idct_dc_add
-        addi          a0, a0, -4
-        sh2add        a0, a2, a0
-        addi          a1, a1, 32
-        vp8_idct_dc_addy
-        vp8_idct_dc_add
+        li       t0, 32
+        vsetivli zero, 4, e16, mf2, ta, ma
+        li       t1, 4 - (128 << 3)
+        vlse16.v v8, (a1), t0
+        vadd.vx  v8, v8, t1
+        vsra.vi  v8, v8, 3
+        # fall through
+endfunc
+
+        .variant_cc ff_vp78_idct_dc_add4uv_rvv
+func ff_vp78_idct_dc_add4uv_rvv, zve64x
+        vsetivli    zero, 16, e16, m2, ta, ma
+        vid.v       v4
+        li          a4, 4
+        vsrl.vi     v4, v4, 2
+        li          t1, 128
+        vrgather.vv v0, v8, v4 # replicate each DC four times
+        slli        t2, a2, 2
+        vsetivli    zero, 2, e64, m1, ta, ma
+1:
+        vlse64.v    v8, (a0), t2
+        addi        a4, a4, -1
+        vsetivli    zero, 16, e8, m1, ta, ma
+        vwaddu.wv   v16, v0, v8
+        sh          zero, (a1)
+        vnclip.wi   v8, v16, 0
+        addi        a1, a1, 32
+        vxor.vx     v8, v8, t1
+        vsetivli    zero, 2, e64, m1, ta, ma
+        vsse64.v    v8, (a0), t2
+        add         a0, a0, a2
+        bnez        a4, 1b
 
         ret
 endfunc
 
-.macro bilin_load dst type mn
-.ifc \type,v
-        add             t5, a2, a3
-.else
+.macro bilin_load_h dst mn
         addi            t5, a2, 1
-.endif
         vle8.v          \dst, (a2)
         vle8.v          v2, (t5)
         vwmulu.vx       v28, \dst, t1
@@ -172,11 +271,35 @@ func ff_put_vp8_bilin4_\type\()_rvv, zve32x
         li              t4, 4
         sub             t1, t1, \mn
 1:
-        addi            a4, a4, -1
-        bilin_load      v0, \type, \mn
-        vse8.v          v0, (a0)
-        add             a2, a2, a3
-        add             a0, a0, a1
+        add             t0, a2, a3
+        add             t2, a0, a1
+        addi            a4, a4, -2
+.ifc \type,v
+        add             t3, t0, a3
+.else
+        addi            t5, a2, 1
+        addi            t3, t0, 1
+        vle8.v          v2, (t5)
+.endif
+        vle8.v          v0, (a2)
+        vle8.v          v4, (t0)
+        vle8.v          v6, (t3)
+        vwmulu.vx       v28, v0, t1
+        vwmulu.vx       v26, v4, t1
+.ifc \type,v
+        vwmaccu.vx      v28, \mn, v4
+.else
+        vwmaccu.vx      v28, \mn, v2
+.endif
+        vwmaccu.vx      v26, \mn, v6
+        vwaddu.wx       v24, v28, t4
+        vwaddu.wx       v22, v26, t4
+        vnsra.wi        v30, v24, 3
+        vnsra.wi        v0, v22, 3
+        vse8.v          v30, (a0)
+        vse8.v          v0, (t2)
+        add             a2, t0, a3
+        add             a0, t2, a1
         bnez            a4, 1b
 
         ret
@@ -193,12 +316,12 @@ func ff_put_vp8_bilin4_hv_rvv, zve32x
         sub             t1, t3, a5
         sub             t2, t3, a6
         li              t4, 4
-        bilin_load      v4, h, a5
+        bilin_load_h    v4, a5
         add             a2, a2, a3
 1:
         addi            a4, a4, -1
         vwmulu.vx       v20, v4, t2
-        bilin_load      v4, h, a5
+        bilin_load_h    v4, a5
         vwmaccu.vx      v20, a6, v4
         vwaddu.wx       v24, v20, t4
         vnsra.wi        v0, v24, 3

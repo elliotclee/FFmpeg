@@ -253,7 +253,7 @@ External library support:
   --enable-libopencore-amrwb enable AMR-WB decoding via libopencore-amrwb [no]
   --enable-libopencv       enable video filtering via libopencv [no]
   --enable-libopenh264     enable H.264 encoding via OpenH264 [no]
-  --enable-libopenjpeg     enable JPEG 2000 de/encoding via OpenJPEG [no]
+  --enable-libopenjpeg     enable JPEG 2000 encoding via OpenJPEG [no]
   --enable-libopenmpt      enable decoding tracked files via libopenmpt [no]
   --enable-libopenvino     enable OpenVINO as a DNN module backend
                            for DNN based filters like dnn_processing [no]
@@ -2850,8 +2850,8 @@ deflate_wrapper_deps="zlib"
 dirac_parse_select="golomb"
 dovi_rpudec_select="golomb"
 dovi_rpuenc_select="golomb"
-dnn_suggest="libtensorflow libopenvino libtorch"
 dnn_deps="avformat swscale"
+dnn_deps_any="libtensorflow libopenvino libtorch"
 error_resilience_select="me_cmp"
 evcparse_select="golomb"
 faandct_deps="faan"
