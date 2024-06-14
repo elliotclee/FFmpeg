@@ -42,6 +42,7 @@
 #include "attributes.h"
 #include "error.h"
 #include "macros.h"
+#include "version.h"
 
 #ifdef HAVE_AV_CONFIG_H
 #   include "config.h"
@@ -122,9 +123,6 @@
 #ifndef av_clip_uintp2
 #   define av_clip_uintp2   av_clip_uintp2_c
 #endif
-#ifndef av_mod_uintp2
-#   define av_mod_uintp2    av_mod_uintp2_c
-#endif
 #ifndef av_sat_add32
 #   define av_sat_add32     av_sat_add32_c
 #endif
@@ -148,6 +146,9 @@
 #endif
 #ifndef av_clipd
 #   define av_clipd         av_clipd_c
+#endif
+#ifndef av_zero_extend
+#   define av_zero_extend   av_zero_extend_c
 #endif
 #ifndef av_popcount
 #   define av_popcount      av_popcount_c
@@ -285,13 +286,27 @@ static av_always_inline av_const unsigned av_clip_uintp2_c(int a, int p)
 /**
  * Clear high bits from an unsigned integer starting with specific bit position
  * @param  a value to clip
- * @param  p bit position to clip at
+ * @param  p bit position to clip at. Must be between 0 and 31.
  * @return clipped value
  */
-static av_always_inline av_const unsigned av_mod_uintp2_c(unsigned a, unsigned p)
+static av_always_inline av_const unsigned av_zero_extend_c(unsigned a, unsigned p)
 {
+#if defined(HAVE_AV_CONFIG_H) && defined(ASSERT_LEVEL) && ASSERT_LEVEL >= 2
+    if (p > 31) abort();
+#endif
     return a & ((1U << p) - 1);
 }
+
+#if FF_API_MOD_UINTP2
+#ifndef av_mod_uintp2
+#   define av_mod_uintp2 av_mod_uintp2_c
+#endif
+attribute_deprecated
+static av_always_inline av_const unsigned av_mod_uintp2_c(unsigned a, unsigned p)
+{
+    return av_zero_extend_c(a, p);
+}
+#endif
 
 /**
  * Add two signed 32-bit values with saturation.
