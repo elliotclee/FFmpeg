@@ -251,6 +251,7 @@ static const struct {
 #endif
 #if CONFIG_SWSCALE
     { "sw_gbrp", checkasm_check_sw_gbrp },
+    { "sw_range_convert", checkasm_check_sw_range_convert },
     { "sw_rgb", checkasm_check_sw_rgb },
     { "sw_scale", checkasm_check_sw_scale },
 #endif
@@ -822,8 +823,7 @@ static int bench_init(void)
 static void bench_uninit(void)
 {
 #if CONFIG_LINUX_PERF
-    if (state.sysfd > 0)
-        close(state.sysfd);
+    close(state.sysfd);
 #endif
 }
 
