@@ -1557,6 +1557,26 @@ static int mov_write_hvcc_tag(AVIOContext *pb, MOVTrack *track)
     return update_size(pb, pos);
 }
 
+static int mov_write_lhvc_tag(AVIOContext *pb, MOVTrack *track)
+{
+    int64_t pos = avio_tell(pb);
+    int ret;
+
+    avio_wb32(pb, 0);
+    ffio_wfourcc(pb, "lhvC");
+    if (track->tag == MKTAG('h','v','c','1'))
+        ret = ff_isom_write_lhvc(pb, track->vos_data, track->vos_len, 1);
+    else
+        ret = ff_isom_write_lhvc(pb, track->vos_data, track->vos_len, 0);
+
+    if (ret < 0) {
+        avio_seek(pb, pos, SEEK_SET);
+        return ret;
+    }
+
+    return update_size(pb, pos);
+}
+
 static int mov_write_evcc_tag(AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
@@ -2170,6 +2190,149 @@ static int mov_write_sv3d_tag(AVFormatContext *s, AVIOContext *pb, AVSphericalMa
     return update_size(pb, sv3d_pos);
 }
 
+static inline int64_t rescale_rational(AVRational q, int b)
+{
+    return av_rescale(q.num, b, q.den);
+}
+
+static void mov_write_hfov_tag(AVFormatContext *s, AVIOContext *pb,
+                              const AVStereo3D *stereo3d)
+{
+    if (!stereo3d->horizontal_field_of_view.num)
+        return;
+
+    avio_wb32(pb, 12); /* size */
+    ffio_wfourcc(pb, "hfov");
+    avio_wb32(pb, rescale_rational(stereo3d->horizontal_field_of_view, 1000));
+}
+
+static void mov_write_vexu_proj_tag(AVFormatContext *s, AVIOContext *pb,
+                                    const AVSphericalMapping *spherical_mapping)
+{
+    avio_wb32(pb, 24); /* size */
+    ffio_wfourcc(pb, "proj");
+    avio_wb32(pb, 16); /* size */
+    ffio_wfourcc(pb, "prji");
+    avio_wb32(pb, 0); /* version + flags */
+
+    switch (spherical_mapping->projection) {
+    case AV_SPHERICAL_RECTILINEAR:
+        ffio_wfourcc(pb, "rect");
+        break;
+    case AV_SPHERICAL_EQUIRECTANGULAR:
+        ffio_wfourcc(pb, "equi");
+        break;
+    case AV_SPHERICAL_HALF_EQUIRECTANGULAR:
+        ffio_wfourcc(pb, "hequ");
+        break;
+    case AV_SPHERICAL_FISHEYE:
+        ffio_wfourcc(pb, "fish");
+        break;
+    default:
+        av_assert0(0);
+    }
+}
+
+static int mov_write_eyes_tag(AVFormatContext *s, AVIOContext *pb,
+                               const AVStereo3D *stereo3d)
+{
+    int64_t pos = avio_tell(pb);
+    int view = 0;
+
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "eyes");
+
+    // stri is mandatory
+    avio_wb32(pb, 13); /* size */
+    ffio_wfourcc(pb, "stri");
+    avio_wb32(pb, 0); /* version + flags */
+    switch (stereo3d->view) {
+    case AV_STEREO3D_VIEW_LEFT:
+        view |= 1 << 0;
+        break;
+    case AV_STEREO3D_VIEW_RIGHT:
+        view |= 1 << 1;
+        break;
+    case AV_STEREO3D_VIEW_PACKED:
+        view |= (1 << 0) | (1 << 1);
+        break;
+    }
+    view |= !!(stereo3d->flags & AV_STEREO3D_FLAG_INVERT) << 3;
+    avio_w8(pb, view);
+
+    // hero is optional
+    if (stereo3d->primary_eye != AV_PRIMARY_EYE_NONE) {
+        avio_wb32(pb, 13); /* size */
+        ffio_wfourcc(pb, "hero");
+        avio_wb32(pb, 0); /* version + flags */
+        avio_w8(pb, stereo3d->primary_eye);
+    }
+
+    // it's not clear if cams is mandatory or optional
+    if (stereo3d->baseline) {
+        avio_wb32(pb, 24); /* size */
+        ffio_wfourcc(pb, "cams");
+        avio_wb32(pb, 16); /* size */
+        ffio_wfourcc(pb, "blin");
+        avio_wb32(pb, 0); /* version + flags */
+        avio_wb32(pb, stereo3d->baseline);
+    }
+
+    // it's not clear if cmfy is mandatory or optional
+    if (stereo3d->horizontal_disparity_adjustment.num) {
+        avio_wb32(pb, 24); /* size */
+        ffio_wfourcc(pb, "cmfy");
+        avio_wb32(pb, 16); /* size */
+        ffio_wfourcc(pb, "dadj");
+        avio_wb32(pb, 0); /* version + flags */
+        avio_wb32(pb, rescale_rational(stereo3d->horizontal_disparity_adjustment, 10000));
+    }
+
+    return update_size(pb, pos);
+}
+
+static int mov_write_vexu_tag(AVFormatContext *s, AVIOContext *pb,
+                              const AVStereo3D *stereo3d,
+                              const AVSphericalMapping *spherical_mapping)
+{
+    int64_t pos;
+
+    if (spherical_mapping &&
+        spherical_mapping->projection != AV_SPHERICAL_RECTILINEAR &&
+        spherical_mapping->projection != AV_SPHERICAL_EQUIRECTANGULAR &&
+        spherical_mapping->projection != AV_SPHERICAL_HALF_EQUIRECTANGULAR &&
+        spherical_mapping->projection != AV_SPHERICAL_FISHEYE) {
+        av_log(s, AV_LOG_WARNING, "Unsupported projection %d. proj not written.\n",
+               spherical_mapping->projection);
+        spherical_mapping = NULL;
+    }
+
+    if (stereo3d && (stereo3d->type == AV_STEREO3D_2D ||
+        (!(stereo3d->flags & AV_STEREO3D_FLAG_INVERT) &&
+           stereo3d->view == AV_STEREO3D_VIEW_UNSPEC &&
+           stereo3d->primary_eye == AV_PRIMARY_EYE_NONE &&
+          !stereo3d->baseline &&
+          !stereo3d->horizontal_disparity_adjustment.num))) {
+        av_log(s, AV_LOG_WARNING, "Unsupported stereo 3d metadata. eyes not written.\n");
+        stereo3d = NULL;
+    }
+
+    if (!spherical_mapping && !stereo3d)
+        return 0;
+
+    pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "vexu");
+
+    if (spherical_mapping)
+        mov_write_vexu_proj_tag(s, pb, spherical_mapping);
+
+    if (stereo3d)
+        mov_write_eyes_tag(s, pb, stereo3d);
+
+    return update_size(pb, pos);
+}
+
 static int mov_write_dvcc_dvvc_tag(AVFormatContext *s, AVIOContext *pb, AVDOVIDecoderConfigurationRecord *dovi)
 {
     uint8_t buf[ISOM_DVCC_DVVC_SIZE];
@@ -2304,11 +2467,6 @@ static int mov_write_clli_tag(AVIOContext *pb, MOVTrack *track)
     avio_wb16(pb, content_light_metadata->MaxCLL);
     avio_wb16(pb, content_light_metadata->MaxFALL);
     return 12;
-}
-
-static inline int64_t rescale_rational(AVRational q, int b)
-{
-    return av_rescale(q.num, b, q.den);
 }
 
 static int mov_write_mdcv_tag(AVIOContext *pb, MOVTrack *track)
@@ -2523,9 +2681,14 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
     } else if (track->par->codec_id == AV_CODEC_ID_DNXHD) {
         mov_write_avid_tag(pb, track);
         avid = 1;
-    } else if (track->par->codec_id == AV_CODEC_ID_HEVC)
+    } else if (track->par->codec_id == AV_CODEC_ID_HEVC) {
         mov_write_hvcc_tag(pb, track);
-    else if (track->par->codec_id == AV_CODEC_ID_VVC)
+        if (track->st->disposition & AV_DISPOSITION_MULTILAYER) {
+            ret = mov_write_lhvc_tag(pb, track);
+            if (ret < 0)
+                av_log(mov->fc, AV_LOG_WARNING, "Not writing 'lhvC' atom for multilayer stream.\n");
+        }
+    } else if (track->par->codec_id == AV_CODEC_ID_VVC)
         mov_write_vvcc_tag(pb, track);
     else if (track->par->codec_id == AV_CODEC_ID_H264 && !TAG_IS_AVCI(track->tag)) {
         mov_write_avcc_tag(pb, track);
@@ -2596,6 +2759,30 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
             mov_write_st3d_tag(s, pb, (AVStereo3D*)stereo_3d->data);
         if (spherical_mapping)
             mov_write_sv3d_tag(mov->fc, pb, (AVSphericalMapping*)spherical_mapping->data);
+    }
+
+    if (track->mode == MODE_MOV || (track->mode == MODE_MP4 &&
+                                    mov->fc->strict_std_compliance <= FF_COMPLIANCE_UNOFFICIAL)) {
+        const AVPacketSideData *sd;
+        const AVStereo3D *stereo3d = NULL;
+        const AVSphericalMapping *spherical_mapping = NULL;
+
+        sd = av_packet_side_data_get(track->st->codecpar->coded_side_data,
+                                     track->st->codecpar->nb_coded_side_data,
+                                     AV_PKT_DATA_STEREO3D);
+        if (sd)
+            stereo3d = (AVStereo3D *)sd->data;
+
+        sd = av_packet_side_data_get(track->st->codecpar->coded_side_data,
+                                     track->st->codecpar->nb_coded_side_data,
+                                     AV_PKT_DATA_SPHERICAL);
+        if (sd)
+            spherical_mapping = (AVSphericalMapping *)sd->data;
+
+        if (stereo3d || spherical_mapping)
+            mov_write_vexu_tag(s, pb, stereo3d, spherical_mapping);
+        if (stereo3d)
+            mov_write_hfov_tag(s, pb, stereo3d);
     }
 
     if (track->mode == MODE_MP4) {
@@ -8421,11 +8608,11 @@ const FFOutputFormat ff_mov_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE | AVFMT_VARIABLE_FPS
 #if FF_API_ALLOW_FLUSH
-    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-#else
-    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+                       | AVFMT_ALLOW_FLUSH
 #endif
+                         ,
     .p.codec_tag       = (const AVCodecTag* const []){
         ff_codec_movvideo_tags, ff_codec_movaudio_tags, ff_codec_movsubtitle_tags, 0
     },
@@ -8473,11 +8660,11 @@ const FFOutputFormat ff_mp4_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE | AVFMT_VARIABLE_FPS
 #if FF_API_ALLOW_FLUSH
-    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-#else
-    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+                       | AVFMT_ALLOW_FLUSH
 #endif
+                         ,
     .p.codec_tag       = mp4_codec_tags_list,
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,

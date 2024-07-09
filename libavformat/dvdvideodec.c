@@ -111,7 +111,6 @@ typedef struct DVDVideoPlaybackState {
     int                         in_ps;              /* if our navigator is in the program stream */
     int                         in_vts;             /* if our navigator is in the VTS */
     int64_t                     nav_pts;            /* PTS according to IFO, not frame-accurate */
-    int                         nb_cells_played;    /* number of cells played back so far */
     uint64_t                    pgc_duration_est;   /* estimated duration as reported by IFO */
     uint64_t                    pgc_elapsed;        /* the elapsed time of the PGC, cell-relative */
     int                         pgc_nb_pg_est;      /* number of PGs as reported by IFOs */
@@ -730,7 +729,6 @@ static int dvdvideo_play_next_ps_block(AVFormatContext *s, DVDVideoPlaybackState
                 state->celln = e_cell->cellN;
                 state->ptt = cur_ptt;
                 state->pgn = cur_pgn;
-                state->nb_cells_played++;
 
                 continue;
             case DVDNAV_NAV_PACKET:
@@ -814,8 +812,15 @@ static int dvdvideo_play_next_ps_block(AVFormatContext *s, DVDVideoPlaybackState
                 (*p_nav_event) = nav_event;
 
                 return nav_len;
-            case DVDNAV_STILL_FRAME:
             case DVDNAV_WAIT:
+                if (dvdnav_wait_skip(state->dvdnav) != DVDNAV_STATUS_OK) {
+                    av_log(s, AV_LOG_ERROR, "Unable to skip WAIT event\n");
+
+                    goto end_dvdnav_error;
+                }
+
+                continue;
+            case DVDNAV_STILL_FRAME:
             case DVDNAV_HOP_CHANNEL:
             case DVDNAV_HIGHLIGHT:
                 if (state->in_ps)
@@ -824,14 +829,6 @@ static int dvdvideo_play_next_ps_block(AVFormatContext *s, DVDVideoPlaybackState
                 if (nav_event == DVDNAV_STILL_FRAME) {
                     if (dvdnav_still_skip(state->dvdnav) != DVDNAV_STATUS_OK) {
                         av_log(s, AV_LOG_ERROR, "Unable to skip still image\n");
-
-                        goto end_dvdnav_error;
-                    }
-                }
-
-                if (nav_event == DVDNAV_WAIT) {
-                    if (dvdnav_wait_skip(state->dvdnav) != DVDNAV_STATUS_OK) {
-                        av_log(s, AV_LOG_ERROR, "Unable to skip WAIT event\n");
 
                         goto end_dvdnav_error;
                     }
@@ -866,8 +863,7 @@ static int dvdvideo_chapters_setup_simple(AVFormatContext *s)
     int chapter_end = c->opt_chapter_end > 0 ? c->opt_chapter_end : c->play_state.pgc_nb_pg_est - 1;
 
     /* dvdnav_describe_title_chapters() describes PGs rather than PTTs, so validate our range */
-    if (chapter_start == chapter_end                ||
-        c->play_state.pgc_nb_pg_est == 1            ||
+    if (c->play_state.pgc_nb_pg_est == 1            ||
         chapter_start > c->play_state.pgc_nb_pg_est ||
         chapter_end > c->play_state.pgc_nb_pg_est) {
 
@@ -879,8 +875,11 @@ static int dvdvideo_chapters_setup_simple(AVFormatContext *s)
     for (int i = chapter_start - 1; i < chapter_end; i++) {
         uint64_t time_effective = c->play_state.pgc_pg_times_est[i] - c->play_state.nav_pts;
 
-        if (!avpriv_new_chapter(s, i, DVDVIDEO_TIME_BASE_Q, time_prev, time_effective, NULL))
+        if (chapter_start != chapter_end &&
+            !avpriv_new_chapter(s, i, DVDVIDEO_TIME_BASE_Q, time_prev, time_effective, NULL)) {
+
             return AVERROR(ENOMEM);
+        }
 
         time_prev = time_effective;
         total_duration = time_effective;
@@ -1547,6 +1546,13 @@ static int dvdvideo_read_header(AVFormatContext *s)
         return ret;
 
         return 0;
+    }
+
+    if (c->opt_chapter_end != 0 && c->opt_chapter_start > c->opt_chapter_end) {
+        av_log(s, AV_LOG_ERROR, "Chapter (PTT) range [%d, %d] is invalid\n",
+                                c->opt_chapter_start, c->opt_chapter_end);
+
+        return AVERROR(EINVAL);
     }
 
     if (c->opt_title == 0) {
