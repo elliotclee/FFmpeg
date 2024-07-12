@@ -2314,6 +2314,7 @@ HEADERS_LIST="
 
 INTRINSICS_LIST="
     intrinsics_neon
+    intrinsics_sse2
 "
 
 MATH_FUNCS="
@@ -2743,6 +2744,7 @@ armv6t2_deps="arm"
 armv8_deps="aarch64"
 neon_deps_any="aarch64 arm"
 intrinsics_neon_deps="neon"
+intrinsics_sse2_deps="sse2"
 vfp_deps="arm"
 vfpv3_deps="vfp"
 setend_deps="arm"
@@ -6444,6 +6446,7 @@ elif enabled loongarch; then
 fi
 
 check_cc intrinsics_neon arm_neon.h "int16x8_t test = vdupq_n_s16(0)"
+check_cc intrinsics_sse2 emmintrin.h "__m128i test = _mm_setzero_si128()"
 
 check_ldflags -Wl,--as-needed
 check_ldflags -Wl,-z,noexecstack
@@ -7145,11 +7148,12 @@ pod2man --help     > /dev/null 2>&1 && enable pod2man   || disable pod2man
 rsync --help 2> /dev/null | grep -q 'contimeout' && enable rsync_contimeout || disable rsync_contimeout
 xmllint --version  > /dev/null 2>&1 && enable xmllint   || disable xmllint
 
+check_headers linux/fb.h
+check_headers linux/videodev2.h
+test_code cc linux/videodev2.h "struct v4l2_frmsizeenum vfse; vfse.discrete.width = 0;" && enable_sanitized struct_v4l2_frmivalenum_discrete
+
 # check V4L2 codecs available in the API
 if enabled v4l2_m2m; then
-    check_headers linux/fb.h
-    check_headers linux/videodev2.h
-    test_code cc linux/videodev2.h "struct v4l2_frmsizeenum vfse; vfse.discrete.width = 0;" && enable_sanitized struct_v4l2_frmivalenum_discrete
     check_cc v4l2_m2m linux/videodev2.h "int i = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_VIDEO_M2M | V4L2_BUF_FLAG_LAST;"
     check_cc vc1_v4l2_m2m linux/videodev2.h "int i = V4L2_PIX_FMT_VC1_ANNEX_G;"
     check_cc mpeg1_v4l2_m2m linux/videodev2.h "int i = V4L2_PIX_FMT_MPEG1;"
