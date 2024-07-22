@@ -472,7 +472,7 @@ static int hw_base_encode_send_frame(AVCodecContext *avctx, FFHWBaseEncodeContex
 
         // Fix timestamps if we hit end-of-stream before the initial decode
         // delay has elapsed.
-        if (ctx->input_order < ctx->decode_delay)
+        if (ctx->input_order <= ctx->decode_delay)
             ctx->dts_pts_diff = ctx->pic_end->pts - ctx->first_pts;
     }
 
@@ -546,11 +546,10 @@ start:
     }
 
     err = ff_encode_get_frame(avctx, frame);
-    if (err < 0 && err != AVERROR_EOF)
-        return err;
-
-    if (err == AVERROR_EOF)
+    if (err == AVERROR_EOF) {
         frame = NULL;
+    } else if (err < 0)
+        return err;
 
     err = hw_base_encode_send_frame(avctx, ctx, frame);
     if (err < 0)

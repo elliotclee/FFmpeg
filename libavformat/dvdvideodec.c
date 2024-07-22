@@ -623,7 +623,6 @@ static int dvdvideo_play_next_ps_block(AVFormatContext *s, DVDVideoPlaybackState
     dvdnav_vts_change_event_t *e_vts;
     dvdnav_cell_change_event_t *e_cell;
     int cur_title, cur_pgcn, cur_pgn, cur_angle, cur_title_unused, cur_ptt, cur_nb_angles;
-    int is_cell_promising = 0;
     pci_t *e_pci;
     dsi_t *e_dsi;
 
@@ -705,23 +704,17 @@ static int dvdvideo_play_next_ps_block(AVFormatContext *s, DVDVideoPlaybackState
                     continue;
 
                 e_cell = (dvdnav_cell_change_event_t *) nav_buf;
-                is_cell_promising = !c->opt_trim || dvdvideo_is_cell_promising(s, state->pgc, e_cell->cellN);
 
-                av_log(s, AV_LOG_DEBUG, "new cell: prev=%d new=%d promising=%d\n",
-                                        state->celln, e_cell->cellN, is_cell_promising);
+                av_log(s, AV_LOG_DEBUG, "new cell: prev=%d new=%d\n", state->celln, e_cell->cellN);
 
                 if (!state->in_ps && !state->in_pgc) {
                     if (cur_title == c->opt_title                        &&
                         (c->opt_pgc || cur_ptt == c->opt_chapter_start)  &&
                         cur_pgcn == state->pgcn                          &&
-                        cur_pgn == state->entry_pgn                      &&
-                        is_cell_promising) {
+                        cur_pgn == state->entry_pgn) {
 
                         state->in_pgc = 1;
                     }
-
-                    if (c->opt_trim && !is_cell_promising)
-                        av_log(s, AV_LOG_INFO, "Skipping padding cell #%d\n", e_cell->cellN);
                 } else if (state->celln >= e_cell->cellN || state->pgn > cur_pgn) {
                     return AVERROR_EOF;
                 }
@@ -764,6 +757,13 @@ static int dvdvideo_play_next_ps_block(AVFormatContext *s, DVDVideoPlaybackState
                        e_pci->pci_gi.nv_pck_lbn, state->vobu_duration, state->nav_pts);
 
                 if (!state->in_ps) {
+                    if (c->opt_trim && !dvdvideo_is_cell_promising(s, state->pgc, state->celln)) {
+                        av_log(s, AV_LOG_INFO, "Skipping padding cell #%d\n", state->celln);
+
+                        i = 0;
+                        continue;
+                    }
+
                     av_log(s, AV_LOG_DEBUG, "navigation: locked to program stream\n");
 
                     state->in_ps = 1;
@@ -875,6 +875,9 @@ static int dvdvideo_chapters_setup_simple(AVFormatContext *s)
     for (int i = chapter_start - 1; i < chapter_end; i++) {
         uint64_t time_effective = c->play_state.pgc_pg_times_est[i] - c->play_state.nav_pts;
 
+        if (time_effective - time_prev == 0)
+            continue;
+
         if (chapter_start != chapter_end &&
             !avpriv_new_chapter(s, i, DVDVIDEO_TIME_BASE_Q, time_prev, time_effective, NULL)) {
 
@@ -935,13 +938,16 @@ static int dvdvideo_chapters_setup_preindex(AVFormatContext *s)
                 continue;
         }
 
-        if (!avpriv_new_chapter(s, nb_chapters, DVDVIDEO_TIME_BASE_Q, cur_chapter_offset,
-                                cur_chapter_offset + cur_chapter_duration, NULL)) {
-            ret = AVERROR(ENOMEM);
-            goto end_close;
+        if (cur_chapter_duration > 0) {
+            if (!avpriv_new_chapter(s, nb_chapters, DVDVIDEO_TIME_BASE_Q, cur_chapter_offset,
+                                    cur_chapter_offset + cur_chapter_duration, NULL)) {
+                ret = AVERROR(ENOMEM);
+                goto end_close;
+            }
+
+            nb_chapters++;
         }
 
-        nb_chapters++;
         cur_chapter_offset += cur_chapter_duration;
         cur_chapter_duration = state.vobu_duration;
         last_ptt = state.ptt;
@@ -1057,7 +1063,7 @@ static int dvdvideo_video_stream_setup(AVFormatContext *s)
 {
     DVDVideoDemuxContext *c = s->priv_data;
 
-    int ret = 0;
+    int ret;
     DVDVideoVTSVideoStreamEntry entry = {0};
     video_attr_t video_attr;
 
@@ -1218,7 +1224,7 @@ static int dvdvideo_audio_stream_add_all(AVFormatContext *s)
 {
     DVDVideoDemuxContext *c = s->priv_data;
 
-    int ret = 0;
+    int ret;
     int nb_streams;
 
     if (c->opt_menu)
@@ -1325,7 +1331,7 @@ static int dvdvideo_subp_stream_add_internal(AVFormatContext *s, uint32_t offset
                                              subp_attr_t subp_attr,
                                              enum DVDVideoSubpictureViewport viewport)
 {
-    int ret = 0;
+    int ret;
     DVDVideoPGCSubtitleStreamEntry entry = {0};
 
     entry.viewport = viewport;
@@ -1362,7 +1368,7 @@ static int dvdvideo_subp_stream_add_all(AVFormatContext *s)
 
 
     for (int i = 0; i < nb_streams; i++) {
-        int ret = 0;
+        int ret;
         uint32_t subp_control;
         subp_attr_t subp_attr;
         video_attr_t video_attr;
@@ -1470,7 +1476,7 @@ static int dvdvideo_subdemux_open(AVFormatContext *s)
 {
     DVDVideoDemuxContext *c = s->priv_data;
     extern const FFInputFormat ff_mpegps_demuxer;
-    int ret = 0;
+    int ret;
 
     if (!(c->mpeg_buf = av_mallocz(DVDVIDEO_BLOCK_SIZE)))
         return AVERROR(ENOMEM);
@@ -1505,7 +1511,7 @@ static int dvdvideo_read_header(AVFormatContext *s)
 {
     DVDVideoDemuxContext *c = s->priv_data;
 
-    int ret = 0;
+    int ret;
 
     if (c->opt_menu) {
         if (c->opt_region               ||

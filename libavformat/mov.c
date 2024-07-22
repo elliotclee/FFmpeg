@@ -333,7 +333,8 @@ static int mov_read_udta_string(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     char *str = NULL;
     const char *key = NULL;
     uint16_t langcode = 0;
-    uint32_t data_type = 0, str_size, str_size_alloc;
+    uint32_t data_type = 0, str_size_alloc;
+    uint64_t str_size;
     int (*parse)(MOVContext*, AVIOContext*, unsigned, const char*) = NULL;
     int raw = 0;
     int num = 0;
@@ -898,6 +899,11 @@ static int mov_read_iacb(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     st = c->fc->streams[c->fc->nb_streams - 1];
     sc = st->priv_data;
 
+    if (st->codecpar->extradata) {
+        av_log(c->fc, AV_LOG_WARNING, "ignoring iacb\n");
+        return 0;
+    }
+
     sc->iamf = av_mallocz(sizeof(*sc->iamf));
     if (!sc->iamf)
         return AVERROR(ENOMEM);
@@ -1261,6 +1267,9 @@ static int mov_read_clap(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     bottom = st->codecpar->height - 1 - bottom;
     right  = st->codecpar->width  - 1 - right;
+
+    if (!(left | right | top | bottom))
+        return 0;
 
     if ((left + right) >= st->codecpar->width ||
         (top + bottom) >= st->codecpar->height)

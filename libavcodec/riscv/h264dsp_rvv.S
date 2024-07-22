@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright © 2024 Rémi Denis-Courmont.
  *
  * Redistribution and use in source and binary forms, with or without
