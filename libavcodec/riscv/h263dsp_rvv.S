@@ -23,6 +23,7 @@
         .option push
         .option norelax
 func ff_h263_h_loop_filter_rvv, zve32x
+        lpad    0
         addi        a0, a0, -2
         vsetivli    zero, 8, e8, mf2, ta, ma
         vlsseg4e8.v v8, (a0), a1
@@ -30,14 +31,13 @@ func ff_h263_h_loop_filter_rvv, zve32x
         vssseg4e8.v v8, (a0), a1
         ret
 1:
-        csrwi       vxrm, 0
-2:      auipc       t1, %pcrel_hi(ff_h263_loop_filter_strength)
+        auipc       t1, %pcrel_hi(ff_h263_loop_filter_strength)
         vwsubu.vv   v14, v10, v9       # p2 - p1
         add         t1, t1, a2
         vwsubu.vv   v12, v8, v11       # p0 - p3
         vsetvli     zero, zero, e16, m1, ta, mu
         vsll.vi     v14, v14, 2
-        lbu         t1, %pcrel_lo(2b)(t1) # strength
+        lbu         t1, %pcrel_lo(1b)(t1) # strength
         vadd.vv     v16, v12, v14
         # Divide by 8 toward 0. v16 is a signed 10-bit value at this point.
         vsrl.vi     v18, v16, 16 - 3   # v18 = (v16 < 0) ? 7 : 0
@@ -83,6 +83,7 @@ endfunc
         .option pop
 
 func ff_h263_v_loop_filter_rvv, zve32x
+        lpad    0
         sub         a4, a0, a1
         vsetivli    zero, 8, e8, mf2, ta, ma
         vle8.v      v10, (a0)

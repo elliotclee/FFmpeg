@@ -81,8 +81,8 @@
     .endif
         ldr             q0, [clip]                  // clip
         ldr             q1, [filter]                // filter
-        ldr             q22, [clip, #24]            // clip
-        ldr             q24, [filter, #24]          // filter
+        ldur            q22, [clip, #24]            // clip
+        ldur            q24, [filter, #24]          // filter
 
         ldr             x5, [pp]                    // x5: p0
         ldr             x6, [pp, #(5*8)]            // x6: p5
@@ -95,7 +95,7 @@
     .else
         ldr             q5, [x5]                    // curr
     .endif
-        movi            v20.4s, 64
+        movi            v20.4s, #64
         cbz             is_near_vb, 1f
         shl             v20.4s, v20.4s, #3
 1:
@@ -220,7 +220,7 @@
     .else
         ldr             d5, [x5]                    // curr
     .endif
-        movi            v20.4s, 64
+        movi            v20.4s, #64
         cbz             is_near_vb, 1f
         shl             v20.4s, v20.4s, #3
 1:
@@ -263,31 +263,31 @@
 .endm
 
 function ff_alf_filter_luma_kernel_8_neon, export=1
-        alf_filter_luma_kernel  1
+        alf_filter_luma_kernel 1
 endfunc
 
 function ff_alf_filter_luma_kernel_12_neon, export=1
-        mov             w5, 4095
+        mov             w5, #4095
         b               1f
 endfunc
 
 function ff_alf_filter_luma_kernel_10_neon, export=1
-        mov             w5, 1023
+        mov             w5, #1023
 1:
-        alf_filter_luma_kernel  2
+        alf_filter_luma_kernel 2
 endfunc
 
 function ff_alf_filter_chroma_kernel_8_neon, export=1
-        alf_filter_chroma_kernel  1
+        alf_filter_chroma_kernel 1
 endfunc
 
 function ff_alf_filter_chroma_kernel_12_neon, export=1
-        mov             w5, 4095
+        mov             w5, #4095
         b               1f
 endfunc
 
 function ff_alf_filter_chroma_kernel_10_neon, export=1
-        mov             w5, 1023
+        mov             w5, #1023
 1:
-        alf_filter_chroma_kernel  2
+        alf_filter_chroma_kernel 2
 endfunc

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2023 Rémi Denis-Courmont.
+ * Copyright © 2024 Rémi Denis-Courmont.
  *
  * This file is part of FFmpeg.
  *
@@ -18,27 +18,31 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config.h"
-#include "libavutil/riscv/asm.S"
+#define VILL -0x8000
 
-func ff_extract_exponents_rvvb, zve32x, zvbb, zba
-        lpad    0
-1:
-        vsetvli     t0, a2, e32, m8, ta, ma
-        vle32.v     v8, (a1)
-        sub         a2, a2, t0
-        vneg.v      v16, v8
-        sh2add      a1, t0, a1
-        vmax.vv     v8, v8, v16
-        vclz.v      v8, v8
-        vsetvli     zero, zero, e16, m4, ta, ma
-        vncvt.x.x.w v4, v8
-        vsetvli     zero, zero, e8, m2, ta, ma
-        vncvt.x.x.w v2, v4
-        vadd.vi     v2, v2, 24 - 32
-        vse8.v      v2, (a0)
-        add         a0, a0, t0
-        bnez        a2, 1b
+        .data
+ff_vtype_e8:
+ff_vtype_e8_1:
+        .half   VILL
+ff_vtype_e8_2:
+        .half   VILL
+ff_vtype_e8_4:
+        .half   VILL
+ff_vtype_e8_8:
+        .half   VILL
+ff_vtype_e8_16:
+        .half   VILL
+ff_vtype_e8_32:
+        .half   VILL
 
-        ret
-endfunc
+ff_vtype_e16:
+ff_vtype_e16_1:
+        .half   VILL
+ff_vtype_e16_2:
+        .half   VILL
+ff_vtype_e16_4:
+        .half   VILL
+ff_vtype_e16_8:
+        .half   VILL
+ff_vtype_e16_16:
+        .half   VILL
