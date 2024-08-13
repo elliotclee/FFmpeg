@@ -2218,6 +2218,7 @@ ARCH_EXT_LIST_PPC="
 ARCH_EXT_LIST_RISCV="
     rv
     rvv
+    rv_zicbop
     rv_zvbb
 "
 
@@ -2763,6 +2764,7 @@ power8_deps="vsx"
 
 rv_deps="riscv"
 rvv_deps="rv"
+rv_zicbop="riscv"
 rv_zvbb_deps="rvv"
 
 loongson2_deps="mips"
@@ -3324,12 +3326,18 @@ nvenc_deps_any="libdl LoadLibrary"
 
 aac_mf_encoder_deps="mediafoundation"
 ac3_mf_encoder_deps="mediafoundation"
+av1_amf_encoder_deps="amf"
 av1_cuvid_decoder_deps="cuvid CUVIDAV1PICPARAMS"
 av1_mediacodec_decoder_deps="mediacodec"
 av1_mediacodec_encoder_deps="mediacodec"
 av1_mediacodec_encoder_select="extract_extradata_bsf"
 av1_nvenc_encoder_deps="nvenc NV_ENC_PIC_PARAMS_AV1"
 av1_nvenc_encoder_select="atsc_a53"
+av1_qsv_decoder_select="qsvdec"
+av1_qsv_encoder_deps="libvpl"
+av1_qsv_encoder_select="qsvenc"
+av1_vaapi_encoder_deps="VAEncPictureParameterBufferAV1"
+av1_vaapi_encoder_select="cbs_av1 vaapi_encode"
 h263_v4l2m2m_decoder_deps="v4l2_m2m h263_v4l2_m2m"
 h263_v4l2m2m_encoder_deps="v4l2_m2m h263_v4l2_m2m"
 h264_amf_encoder_deps="amf"
@@ -3419,12 +3427,7 @@ vp9_vaapi_encoder_select="vaapi_encode"
 vp9_qsv_encoder_deps="libmfx MFX_CODEC_VP9"
 vp9_qsv_encoder_select="qsvenc"
 vp9_v4l2m2m_decoder_deps="v4l2_m2m vp9_v4l2_m2m"
-av1_qsv_decoder_select="qsvdec"
-av1_qsv_encoder_select="qsvenc"
-av1_qsv_encoder_deps="libvpl"
-av1_amf_encoder_deps="amf"
-av1_vaapi_encoder_deps="VAEncPictureParameterBufferAV1"
-av1_vaapi_encoder_select="cbs_av1 vaapi_encode"
+vvc_qsv_decoder_select="qsvdec"
 
 # parsers
 aac_parser_select="adts_header mpeg4audio"
@@ -6365,6 +6368,7 @@ elif enabled riscv; then
 
     enabled rv && check_inline_asm rv '".option arch, +zbb\nrev8 t0, t1"'
     enabled rvv && check_inline_asm rvv '".option arch, +v\nvsetivli zero, 0, e8, m1, ta, ma"'
+    enabled rv_zicbop && check_inline_asm rv_zicbop '".option arch, +zicbop\nprefetch.r 64(a0)"'
     enabled rv_zvbb && check_inline_asm rv_zvbb '".option arch, +zvbb\nvclz.v v0, v8"'
 
 elif enabled x86; then
@@ -7921,6 +7925,7 @@ if enabled loongarch; then
     echo "LASX enabled              ${lasx-no}"
 fi
 if enabled riscv; then
+    echo "RISC-V CBO Prefetch       ${rv_zicbop-no}"
     echo "RISC-V Vector enabled     ${rvv-no}"
 fi
 echo "debug symbols             ${debug-no}"
