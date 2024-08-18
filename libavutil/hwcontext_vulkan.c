@@ -94,6 +94,7 @@ typedef struct VulkanDevicePriv {
     VkPhysicalDeviceCooperativeMatrixFeaturesKHR coop_matrix_features;
     VkPhysicalDeviceOpticalFlowFeaturesNV optical_flow_features;
     VkPhysicalDeviceShaderObjectFeaturesEXT shader_object_features;
+    VkPhysicalDeviceVideoMaintenance1FeaturesKHR video_maint_1_features;
 
     /* Queues */
     pthread_mutex_t **qf_mutex;
@@ -416,13 +417,13 @@ static const VulkanOptExtension optional_device_exts[] = {
     /* Misc or required by other extensions */
     { VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,               FF_VK_EXT_NO_FLAG                },
     { VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,                  FF_VK_EXT_NO_FLAG                },
-    { VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME,         FF_VK_EXT_NO_FLAG                },
     { VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,                FF_VK_EXT_DESCRIPTOR_BUFFER,     },
     { VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME,              FF_VK_EXT_DEVICE_DRM             },
     { VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,              FF_VK_EXT_ATOMIC_FLOAT           },
     { VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,               FF_VK_EXT_COOP_MATRIX            },
     { VK_NV_OPTICAL_FLOW_EXTENSION_NAME,                      FF_VK_EXT_OPTICAL_FLOW           },
     { VK_EXT_SHADER_OBJECT_EXTENSION_NAME,                    FF_VK_EXT_SHADER_OBJECT          },
+    { VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,              FF_VK_EXT_VIDEO_MAINTENANCE_1    },
 
     /* Imports/exports */
     { VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,               FF_VK_EXT_EXTERNAL_FD_MEMORY     },
@@ -498,8 +499,19 @@ static VkBool32 VKAPI_CALL vk_dbg_callback(VkDebugUtilsMessageSeverityFlagBitsEX
         av_free((void *)props);                                                \
     }
 
+enum FFVulkanDebugMode {
+    FF_VULKAN_DEBUG_NONE = 0,
+    /* Standard GPU-assisted validation */
+    FF_VULKAN_DEBUG_VALIDATE = 1,
+    /* Passes printfs in shaders to the debug callback */
+    FF_VULKAN_DEBUG_PRINTF = 2,
+    /* Enables extra printouts */
+    FF_VULKAN_DEBUG_PRACTICES = 3,
+};
+
 static int check_extensions(AVHWDeviceContext *ctx, int dev, AVDictionary *opts,
-                            const char * const **dst, uint32_t *num, int debug)
+                            const char * const **dst, uint32_t *num,
+                            enum FFVulkanDebugMode debug_mode)
 {
     const char *tstr;
     const char **extension_names = NULL;
@@ -571,7 +583,10 @@ static int check_extensions(AVHWDeviceContext *ctx, int dev, AVDictionary *opts,
         ADD_VAL_TO_LIST(extension_names, extensions_found, tstr);
     }
 
-    if (debug && !dev) {
+    if (!dev &&
+        ((debug_mode == FF_VULKAN_DEBUG_VALIDATE) ||
+         (debug_mode == FF_VULKAN_DEBUG_PRINTF) ||
+         (debug_mode == FF_VULKAN_DEBUG_PRACTICES))) {
         tstr = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
         found = 0;
         for (int j = 0; j < sup_ext_count; j++) {
@@ -627,20 +642,21 @@ fail:
     return err;
 }
 
-static int check_validation_layers(AVHWDeviceContext *ctx, AVDictionary *opts,
-                                   const char * const **dst, uint32_t *num,
-                                   int *debug_mode)
+static int check_layers(AVHWDeviceContext *ctx, AVDictionary *opts,
+                        const char * const **dst, uint32_t *num,
+                        enum FFVulkanDebugMode *debug_mode)
 {
-    static const char default_layer[] = { "VK_LAYER_KHRONOS_validation" };
-
-    int found = 0, err = 0;
+    int err = 0;
     VulkanDevicePriv *priv = ctx->hwctx;
     FFVulkanFunctions *vk = &priv->vkctx.vkfn;
+
+    static const char layer_standard_validation[] = { "VK_LAYER_KHRONOS_validation" };
+    int layer_standard_validation_found = 0;
 
     uint32_t sup_layer_count;
     VkLayerProperties *sup_layers;
 
-    AVDictionaryEntry *user_layers;
+    AVDictionaryEntry *user_layers = av_dict_get(opts, "layers", NULL, 0);
     char *user_layers_str = NULL;
     char *save, *token;
 
@@ -648,99 +664,136 @@ static int check_validation_layers(AVHWDeviceContext *ctx, AVDictionary *opts,
     uint32_t enabled_layers_count = 0;
 
     AVDictionaryEntry *debug_opt = av_dict_get(opts, "debug", NULL, 0);
-    int debug = debug_opt && strtol(debug_opt->value, NULL, 10);
+    enum FFVulkanDebugMode mode;
 
-    /* If `debug=0`, enable no layers at all. */
-    if (debug_opt && !debug)
-        return 0;
+    *debug_mode = mode = FF_VULKAN_DEBUG_NONE;
 
+    /* Get a list of all layers */
     vk->EnumerateInstanceLayerProperties(&sup_layer_count, NULL);
     sup_layers = av_malloc_array(sup_layer_count, sizeof(VkLayerProperties));
     if (!sup_layers)
         return AVERROR(ENOMEM);
     vk->EnumerateInstanceLayerProperties(&sup_layer_count, sup_layers);
 
-    av_log(ctx, AV_LOG_VERBOSE, "Supported validation layers:\n");
+    av_log(ctx, AV_LOG_VERBOSE, "Supported layers:\n");
     for (int i = 0; i < sup_layer_count; i++)
         av_log(ctx, AV_LOG_VERBOSE, "\t%s\n", sup_layers[i].layerName);
 
-    /* If `debug=1` is specified, enable the standard validation layer extension */
-    if (debug) {
-        *debug_mode = debug;
-        for (int i = 0; i < sup_layer_count; i++) {
-            if (!strcmp(default_layer, sup_layers[i].layerName)) {
-                found = 1;
-                av_log(ctx, AV_LOG_VERBOSE, "Default validation layer %s is enabled\n",
-                       default_layer);
-                ADD_VAL_TO_LIST(enabled_layers, enabled_layers_count, default_layer);
-                break;
-            }
-        }
-    }
-
-    user_layers = av_dict_get(opts, "validation_layers", NULL, 0);
-    if (!user_layers)
+    /* If no user layers or debug layers are given, return */
+    if (!debug_opt && !user_layers)
         goto end;
 
-    user_layers_str = av_strdup(user_layers->value);
-    if (!user_layers_str) {
-        err = AVERROR(ENOMEM);
-        goto fail;
+    /* Check for any properly supported validation layer */
+    if (debug_opt) {
+        if (!strcmp(debug_opt->value, "printf")) {
+            mode = FF_VULKAN_DEBUG_PRINTF;
+        } else if (!strcmp(debug_opt->value, "validate")) {
+            mode = FF_VULKAN_DEBUG_VALIDATE;
+        } else if (!strcmp(debug_opt->value, "practices")) {
+            mode = FF_VULKAN_DEBUG_PRACTICES;
+        } else {
+            char *end_ptr = NULL;
+            int idx = strtol(debug_opt->value, &end_ptr, 10);
+            if (end_ptr == debug_opt->value || end_ptr[0] != '\0' ||
+                idx < 0 || idx > FF_VULKAN_DEBUG_PRACTICES) {
+                av_log(ctx, AV_LOG_ERROR, "Invalid debugging mode \"%s\"\n",
+                       debug_opt->value);
+                err = AVERROR(EINVAL);
+                goto end;
+            }
+            mode = idx;
+        }
     }
 
-    token = av_strtok(user_layers_str, "+", &save);
-    while (token) {
-        found = 0;
-        if (!strcmp(default_layer, token)) {
-            if (debug) {
-                /* if the `debug=1`, default_layer is enabled, skip here */
-                token = av_strtok(NULL, "+", &save);
-                continue;
-            } else {
-                /* if the `debug=0`, enable debug mode to load its callback properly */
-                *debug_mode = debug;
-            }
-        }
-        for (int j = 0; j < sup_layer_count; j++) {
-            if (!strcmp(token, sup_layers[j].layerName)) {
-                found = 1;
+    /* If mode is VALIDATE or PRINTF, try to find the standard validation layer extension */
+    if ((mode == FF_VULKAN_DEBUG_VALIDATE) ||
+        (mode == FF_VULKAN_DEBUG_PRINTF) ||
+        (mode == FF_VULKAN_DEBUG_PRACTICES)) {
+        for (int i = 0; i < sup_layer_count; i++) {
+            if (!strcmp(layer_standard_validation, sup_layers[i].layerName)) {
+                av_log(ctx, AV_LOG_VERBOSE, "Standard validation layer %s is enabled\n",
+                       layer_standard_validation);
+                ADD_VAL_TO_LIST(enabled_layers, enabled_layers_count, layer_standard_validation);
+                *debug_mode = mode;
+                layer_standard_validation_found = 1;
                 break;
             }
         }
-        if (found) {
-            av_log(ctx, AV_LOG_VERBOSE, "Requested Validation Layer: %s\n", token);
-            ADD_VAL_TO_LIST(enabled_layers, enabled_layers_count, token);
-        } else {
+        if (!layer_standard_validation_found) {
             av_log(ctx, AV_LOG_ERROR,
-                   "Validation Layer \"%s\" not support.\n", token);
-            err = AVERROR(EINVAL);
-            goto fail;
+                   "Validation Layer \"%s\" not supported\n", layer_standard_validation);
+            err = AVERROR(ENOTSUP);
+            goto end;
         }
-        token = av_strtok(NULL, "+", &save);
     }
 
-    av_free(user_layers_str);
+    /* Process any custom layers enabled */
+    if (user_layers) {
+        int found;
 
-end:
-    av_free(sup_layers);
+        user_layers_str = av_strdup(user_layers->value);
+        if (!user_layers_str) {
+            err = AVERROR(ENOMEM);
+            goto fail;
+        }
 
-    *dst = enabled_layers;
-    *num = enabled_layers_count;
+        token = av_strtok(user_layers_str, "+", &save);
+        while (token) {
+            found = 0;
 
-    return 0;
+            /* If debug=1/2 was specified as an option, skip this layer */
+            if (!strcmp(layer_standard_validation, token) && layer_standard_validation_found) {
+                token = av_strtok(NULL, "+", &save);
+                break;
+            }
+
+            /* Try to find the layer in the list of supported layers */
+            for (int j = 0; j < sup_layer_count; j++) {
+                if (!strcmp(token, sup_layers[j].layerName)) {
+                    found = 1;
+                    break;
+                }
+            }
+
+            if (found) {
+                av_log(ctx, AV_LOG_VERBOSE, "Using layer: %s\n", token);
+                ADD_VAL_TO_LIST(enabled_layers, enabled_layers_count, token);
+
+                /* If debug was not set as an option, force it */
+                if (!strcmp(layer_standard_validation, token))
+                    *debug_mode = FF_VULKAN_DEBUG_VALIDATE;
+            } else {
+                av_log(ctx, AV_LOG_ERROR,
+                       "Layer \"%s\" not supported\n", token);
+                err = AVERROR(EINVAL);
+                goto end;
+            }
+
+            token = av_strtok(NULL, "+", &save);
+        }
+    }
 
 fail:
-    RELEASE_PROPS(enabled_layers, enabled_layers_count);
+end:
     av_free(sup_layers);
     av_free(user_layers_str);
+
+    if (err < 0) {
+        RELEASE_PROPS(enabled_layers, enabled_layers_count);
+    } else {
+        *dst = enabled_layers;
+        *num = enabled_layers_count;
+    }
+
     return err;
 }
 
 /* Creates a VkInstance */
 static int create_instance(AVHWDeviceContext *ctx, AVDictionary *opts)
 {
-    int err = 0, debug_mode = 0;
+    int err = 0;
     VkResult ret;
+    enum FFVulkanDebugMode debug_mode;
     VulkanDevicePriv *p = ctx->hwctx;
     AVVulkanDeviceContext *hwctx = &p->p;
     FFVulkanFunctions *vk = &p->vkctx.vkfn;
@@ -776,8 +829,8 @@ static int create_instance(AVHWDeviceContext *ctx, AVDictionary *opts)
         return err;
     }
 
-    err = check_validation_layers(ctx, opts, &inst_props.ppEnabledLayerNames,
-                                    &inst_props.enabledLayerCount, &debug_mode);
+    err = check_layers(ctx, opts, &inst_props.ppEnabledLayerNames,
+                       &inst_props.enabledLayerCount, &debug_mode);
     if (err)
         goto fail;
 
@@ -789,14 +842,32 @@ static int create_instance(AVHWDeviceContext *ctx, AVDictionary *opts)
     if (err < 0)
         goto fail;
 
-    if (debug_mode) {
-        static const VkValidationFeatureEnableEXT feat_list[] = {
-            VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
-            VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT,
+    /* Enable debug features if needed */
+    if (debug_mode == FF_VULKAN_DEBUG_VALIDATE) {
+        static const VkValidationFeatureEnableEXT feat_list_validate[] = {
             VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
+            VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT,
+            VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
         };
-        validation_features.pEnabledValidationFeatures = feat_list;
-        validation_features.enabledValidationFeatureCount = FF_ARRAY_ELEMS(feat_list);
+        validation_features.pEnabledValidationFeatures = feat_list_validate;
+        validation_features.enabledValidationFeatureCount = FF_ARRAY_ELEMS(feat_list_validate);
+        inst_props.pNext = &validation_features;
+    } else if (debug_mode == FF_VULKAN_DEBUG_PRINTF) {
+        static const VkValidationFeatureEnableEXT feat_list_debug[] = {
+            VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
+            VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT,
+            VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT,
+        };
+        validation_features.pEnabledValidationFeatures = feat_list_debug;
+        validation_features.enabledValidationFeatureCount = FF_ARRAY_ELEMS(feat_list_debug);
+        inst_props.pNext = &validation_features;
+    } else if (debug_mode == FF_VULKAN_DEBUG_PRACTICES) {
+        static const VkValidationFeatureEnableEXT feat_list_practices[] = {
+            VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
+            VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
+        };
+        validation_features.pEnabledValidationFeatures = feat_list_practices;
+        validation_features.enabledValidationFeatureCount = FF_ARRAY_ELEMS(feat_list_practices);
         inst_props.pNext = &validation_features;
     }
 
@@ -827,7 +898,10 @@ static int create_instance(AVHWDeviceContext *ctx, AVDictionary *opts)
         goto fail;
     }
 
-    if (debug_mode) {
+    /* Setup debugging callback if needed */
+    if ((debug_mode == FF_VULKAN_DEBUG_VALIDATE) ||
+        (debug_mode == FF_VULKAN_DEBUG_PRINTF) ||
+        (debug_mode == FF_VULKAN_DEBUG_PRACTICES)) {
         VkDebugUtilsMessengerCreateInfoEXT dbg = {
             .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
             .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
@@ -1329,9 +1403,13 @@ static int vulkan_device_create_internal(AVHWDeviceContext *ctx,
     VkPhysicalDeviceTimelineSemaphoreFeatures timeline_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
     };
+    VkPhysicalDeviceVideoMaintenance1FeaturesKHR video_maint_1_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
+        .pNext = &timeline_features,
+    };
     VkPhysicalDeviceShaderObjectFeaturesEXT shader_object_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT,
-        .pNext = &timeline_features,
+        .pNext = &video_maint_1_features,
     };
     VkPhysicalDeviceOpticalFlowFeaturesNV optical_flow_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV,
@@ -1369,35 +1447,6 @@ static int vulkan_device_create_internal(AVHWDeviceContext *ctx,
     VkDeviceCreateInfo dev_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
     };
-
-    hwctx->device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    hwctx->device_features.pNext = &p->device_features_1_1;
-    p->device_features_1_1.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-    p->device_features_1_1.pNext = &p->device_features_1_2;
-    p->device_features_1_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    p->device_features_1_2.pNext = &p->device_features_1_3;
-    p->device_features_1_3.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-    p->device_features_1_3.pNext = NULL;
-
-#define OPT_CHAIN(EXT_FLAG, STRUCT_P, TYPE)                            \
-    do {                                                               \
-        if (p->vkctx.extensions & EXT_FLAG) {                          \
-            (STRUCT_P)->sType = TYPE;                                  \
-            ff_vk_link_struct(hwctx->device_features.pNext, STRUCT_P); \
-        }                                                              \
-    } while (0)
-
-    OPT_CHAIN(FF_VK_EXT_DESCRIPTOR_BUFFER, &p->desc_buf_features,
-              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT);
-    OPT_CHAIN(FF_VK_EXT_ATOMIC_FLOAT, &p->atomic_float_features,
-              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT);
-    OPT_CHAIN(FF_VK_EXT_COOP_MATRIX, &p->coop_matrix_features,
-              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR);
-    OPT_CHAIN(FF_VK_EXT_SHADER_OBJECT, &p->shader_object_features,
-              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT);
-    OPT_CHAIN(FF_VK_EXT_OPTICAL_FLOW, &p->optical_flow_features,
-              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV);
-#undef OPT_CHAIN
 
     ctx->free = vulkan_device_free;
 
@@ -1455,6 +1504,8 @@ static int vulkan_device_create_internal(AVHWDeviceContext *ctx,
     p->device_features_1_3.shaderZeroInitializeWorkgroupMemory = dev_features_1_3.shaderZeroInitializeWorkgroupMemory;
     p->device_features_1_3.dynamicRendering = dev_features_1_3.dynamicRendering;
 
+    p->video_maint_1_features.videoMaintenance1 = video_maint_1_features.videoMaintenance1;
+
     p->desc_buf_features.descriptorBuffer = desc_buf_features.descriptorBuffer;
     p->desc_buf_features.descriptorBufferPushDescriptors = desc_buf_features.descriptorBufferPushDescriptors;
 
@@ -1467,12 +1518,7 @@ static int vulkan_device_create_internal(AVHWDeviceContext *ctx,
 
     p->shader_object_features.shaderObject = shader_object_features.shaderObject;
 
-    dev_info.pNext = &hwctx->device_features;
-
-    /* Setup queue family */
-    if ((err = setup_queue_families(ctx, &dev_info)))
-        goto end;
-
+    /* Find and enable extensions */
     if ((err = check_extensions(ctx, 1, opts, &dev_info.ppEnabledExtensionNames,
                                 &dev_info.enabledExtensionCount, 0))) {
         for (int i = 0; i < dev_info.queueCreateInfoCount; i++)
@@ -1480,6 +1526,45 @@ static int vulkan_device_create_internal(AVHWDeviceContext *ctx,
         av_free((void *)dev_info.pQueueCreateInfos);
         goto end;
     }
+
+    /* Setup enabled device features */
+    hwctx->device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    hwctx->device_features.pNext = &p->device_features_1_1;
+    p->device_features_1_1.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    p->device_features_1_1.pNext = &p->device_features_1_2;
+    p->device_features_1_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    p->device_features_1_2.pNext = &p->device_features_1_3;
+    p->device_features_1_3.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    p->device_features_1_3.pNext = NULL;
+
+#define OPT_CHAIN(EXT_FLAG, STRUCT_P, TYPE)                            \
+    do {                                                               \
+        if (p->vkctx.extensions & EXT_FLAG) {                          \
+            (STRUCT_P)->sType = TYPE;                                  \
+            ff_vk_link_struct(hwctx->device_features.pNext, STRUCT_P); \
+        }                                                              \
+    } while (0)
+
+    OPT_CHAIN(FF_VK_EXT_DESCRIPTOR_BUFFER, &p->desc_buf_features,
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT);
+    OPT_CHAIN(FF_VK_EXT_ATOMIC_FLOAT, &p->atomic_float_features,
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT);
+    OPT_CHAIN(FF_VK_EXT_COOP_MATRIX, &p->coop_matrix_features,
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR);
+    OPT_CHAIN(FF_VK_EXT_SHADER_OBJECT, &p->shader_object_features,
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT);
+    OPT_CHAIN(FF_VK_EXT_OPTICAL_FLOW, &p->optical_flow_features,
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV);
+    OPT_CHAIN(FF_VK_EXT_VIDEO_MAINTENANCE_1, &p->video_maint_1_features,
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR);
+#undef OPT_CHAIN
+
+    /* Add the enabled features into the pnext chain of device creation */
+    dev_info.pNext = &hwctx->device_features;
+
+    /* Setup enabled queue families */
+    if ((err = setup_queue_families(ctx, &dev_info)))
+        goto end;
 
     ret = vk->CreateDevice(hwctx->phys_dev, &dev_info, hwctx->alloc,
                            &hwctx->act_dev);
@@ -2547,6 +2632,12 @@ static int vulkan_frames_init(AVHWFramesContext *hwfc)
                                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                                           VK_IMAGE_USAGE_STORAGE_BIT       |
                                           VK_IMAGE_USAGE_SAMPLED_BIT);
+
+        /* Enables encoding of images, if supported by format and extensions */
+        if ((supported_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR) &&
+            (p->vkctx.extensions & (FF_VK_EXT_VIDEO_ENCODE_QUEUE |
+                                   FF_VK_EXT_VIDEO_MAINTENANCE_1)))
+            hwctx->usage |= VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
     }
 
     /* Image creation flags.
@@ -2562,6 +2653,28 @@ static int vulkan_frames_init(AVHWFramesContext *hwfc)
             if ((fmt->vk_planes > 1) && (hwctx->format[0] == fmt->vkf))
                 hwctx->img_flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
                                     VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+        }
+    }
+
+    /* If the image has an ENCODE_SRC usage, and the maintenance1
+     * extension is supported, check if it has a profile list.
+     * If there's no profile list, or it has no encode operations,
+     * then allow creating the image with no specific profile. */
+    if ((hwctx->usage & VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR) &&
+        p->video_maint_1_features.videoMaintenance1) {
+        const VkVideoProfileListInfoKHR *pl;
+        pl = ff_vk_find_struct(hwctx->create_pnext, VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR);
+        if (!pl) {
+            hwctx->img_flags |= VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
+        } else {
+            uint32_t i;
+            for (i = 0; i < pl->profileCount; i++) {
+                /* Video ops start at exactly 0x00010000 */
+                if (pl->pProfiles[i].videoCodecOperation & 0xFFFF0000)
+                    break;
+            }
+            if (i == pl->profileCount)
+                hwctx->img_flags |= VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
         }
     }
 
@@ -3717,6 +3830,7 @@ static int host_map_frame(AVHWFramesContext *hwfc, AVBufferRef **dst, int *nb_bu
         /* Add the offset at the start, which gets ignored */
         buffer_size = offs + swf->linesize[i]*p_h;
         buffer_size = FFALIGN(buffer_size, p->props.properties.limits.minMemoryMapAlignment);
+        buffer_size = FFALIGN(buffer_size, p->hprops.minImportedHostPointerAlignment);
 
         /* Create a buffer */
         vkb = av_mallocz(sizeof(*vkb));
