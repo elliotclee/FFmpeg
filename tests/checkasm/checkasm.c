@@ -170,6 +170,9 @@ static const struct {
     #if CONFIG_ME_CMP
         { "motion", checkasm_check_motion },
     #endif
+    #if CONFIG_MPEGVIDEOENC
+        { "mpegvideoencdsp", checkasm_check_mpegvideoencdsp },
+    #endif
     #if CONFIG_OPUS_DECODER
         { "opusdsp", checkasm_check_opusdsp },
     #endif
@@ -255,6 +258,7 @@ static const struct {
     { "sw_rgb", checkasm_check_sw_rgb },
     { "sw_scale", checkasm_check_sw_scale },
     { "sw_yuv2rgb", checkasm_check_sw_yuv2rgb },
+    { "sw_yuv2yuv", checkasm_check_sw_yuv2yuv },
 #endif
 #if CONFIG_AVUTIL
         { "fixed_dsp", checkasm_check_fixed_dsp },
