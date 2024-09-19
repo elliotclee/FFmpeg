@@ -186,6 +186,7 @@ static const struct FFVkFormatEntry {
     { VK_FORMAT_B8G8R8A8_UNORM,           AV_PIX_FMT_BGR0,    VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_B8G8R8A8_UNORM           } },
     { VK_FORMAT_R8G8B8A8_UNORM,           AV_PIX_FMT_RGB0,    VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_R8G8B8A8_UNORM           } },
     { VK_FORMAT_A2R10G10B10_UNORM_PACK32, AV_PIX_FMT_X2RGB10, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_A2R10G10B10_UNORM_PACK32 } },
+    { VK_FORMAT_A2B10G10R10_UNORM_PACK32, AV_PIX_FMT_X2BGR10, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_A2B10G10R10_UNORM_PACK32 } },
 
     /* Planar RGB */
     { VK_FORMAT_R8_UNORM,   AV_PIX_FMT_GBRAP,    VK_IMAGE_ASPECT_COLOR_BIT, 1, 4, 4, { VK_FORMAT_R8_UNORM,   VK_FORMAT_R8_UNORM,   VK_FORMAT_R8_UNORM,   VK_FORMAT_R8_UNORM   } },
@@ -1758,7 +1759,6 @@ FF_DISABLE_DEPRECATION_WARNINGS
         tx_index    = (ctx_qf == tx_index)    ? -1 : tx_index;                                  \
         enc_index   = (ctx_qf == enc_index)   ? -1 : enc_index;                                 \
         dec_index   = (ctx_qf == dec_index)   ? -1 : dec_index;                                 \
-        p->img_qfs[p->nb_img_qfs++] = ctx_qf;                                                   \
     } while (0)
 
     CHECK_QUEUE("graphics", 0, graph_index, hwctx->queue_family_index,        hwctx->nb_graphics_queues);
@@ -1799,6 +1799,22 @@ FF_ENABLE_DEPRECATION_WARNINGS
                                   VK_QUEUE_VIDEO_ENCODE_BIT_KHR)) {
             hwctx->qf[i].video_caps = qf_vid[hwctx->qf[i].idx].videoCodecOperations;
         }
+    }
+
+    /* Setup array for pQueueFamilyIndices with used queue families */
+    p->nb_img_qfs = 0;
+    for (int i = 0; i < hwctx->nb_qf; i++) {
+        int seen = 0;
+        /* Make sure each entry is unique
+         * (VUID-VkBufferCreateInfo-sharingMode-01419) */
+        for (int j = (i - 1); j >= 0; j--) {
+            if (hwctx->qf[i].idx == hwctx->qf[j].idx) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen)
+            p->img_qfs[p->nb_img_qfs++] = hwctx->qf[i].idx;
     }
 
     if (!hwctx->lock_queue)
@@ -2656,8 +2672,9 @@ static int vulkan_frames_init(AVHWFramesContext *hwfc)
      * Only fill them in automatically if the image is not going to be used as
      * a DPB-only image, and we have SAMPLED/STORAGE bits set. */
     if (!hwctx->img_flags) {
-        int is_lone_dpb =  (hwctx->usage & VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR) &&
-                          !(hwctx->usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR);
+        int is_lone_dpb = ((hwctx->usage & VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR) ||
+                           ((hwctx->usage & VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR) &&
+                            !(hwctx->usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR)));
         int sampleable = hwctx->usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
                                          VK_IMAGE_USAGE_STORAGE_BIT);
         if (sampleable && !is_lone_dpb) {
@@ -2791,6 +2808,10 @@ static const struct {
     { DRM_FORMAT_XRGB8888, VK_FORMAT_B8G8R8A8_UNORM },
     { DRM_FORMAT_ABGR8888, VK_FORMAT_R8G8B8A8_UNORM },
     { DRM_FORMAT_XBGR8888, VK_FORMAT_R8G8B8A8_UNORM },
+    { DRM_FORMAT_ARGB2101010, VK_FORMAT_A2B10G10R10_UNORM_PACK32 },
+    { DRM_FORMAT_ABGR2101010, VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
+    { DRM_FORMAT_XRGB2101010, VK_FORMAT_A2B10G10R10_UNORM_PACK32 },
+    { DRM_FORMAT_XBGR2101010, VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
 
     // All these DRM_FORMATs were added in the same libdrm commit.
 #ifdef DRM_FORMAT_XYUV8888
