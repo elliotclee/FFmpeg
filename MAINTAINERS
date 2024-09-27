@@ -60,8 +60,7 @@ API tests                           [0]
 
 Communication
 =============
-
-website                                 (S: https://git.ffmpeg.org/ffmpeg-web) Deby Barbara Lepage
+website                                 (T: https://git.ffmpeg.org/ffmpeg-web) Deby Barbara Lepage
 fate.ffmpeg.org                         (L: fate-admin@ffmpeg.org) (W: https://fate.ffmpeg.org) (P: https://ffmpeg.org/fate.html) (S: https://git.ffmpeg.org/fateserver) Timo Rothenpieler
 Trac bug tracker                        (W: https://trac.ffmpeg.org) Alexander Strasser, Michael Niedermayer, Carl Eugen Hoyos
 Patchwork                           [2] (W: https://patchwork.ffmpeg.org) Andriy Gelman
@@ -345,6 +344,7 @@ Filters:
   vf_scale.c                        [2] Michael Niedermayer
   vf_tonemap_opencl.c                   Ruiling Song
   vf_yadif.c                        [2] Michael Niedermayer
+  vf_xfade_vulkan.c                 [2] Marvin Scholz (CC <epirat07@gmail.com>)
 
 Sources:
   vsrc_mandelbrot.c                 [2] Michael Niedermayer

@@ -581,9 +581,9 @@ static int bsf_init(MuxStream *ms)
     int ret;
 
     if (!ctx)
-        return avcodec_parameters_copy(ost->st->codecpar, ost->par_in);
+        return avcodec_parameters_copy(ost->st->codecpar, ms->par_in);
 
-    ret = avcodec_parameters_copy(ctx->par_in, ost->par_in);
+    ret = avcodec_parameters_copy(ctx->par_in, ms->par_in);
     if (ret < 0)
         return ret;
 
@@ -608,11 +608,28 @@ static int bsf_init(MuxStream *ms)
     return 0;
 }
 
-int of_stream_init(OutputFile *of, OutputStream *ost)
+int of_stream_init(OutputFile *of, OutputStream *ost,
+                   const AVCodecContext *enc_ctx)
 {
     Muxer *mux = mux_from_of(of);
     MuxStream *ms = ms_from_ost(ost);
     int ret;
+
+    if (enc_ctx) {
+        // use upstream time base unless it has been overridden previously
+        if (ost->st->time_base.num <= 0 || ost->st->time_base.den <= 0)
+            ost->st->time_base = av_add_q(enc_ctx->time_base, (AVRational){0, 1});
+
+        ost->st->avg_frame_rate = enc_ctx->framerate;
+        ost->st->sample_aspect_ratio = enc_ctx->sample_aspect_ratio;
+
+        ret = avcodec_parameters_from_context(ms->par_in, enc_ctx);
+        if (ret < 0) {
+            av_log(ost, AV_LOG_FATAL,
+                   "Error initializing the output stream codec parameters.\n");
+            return ret;
+        }
+    }
 
     /* initialize bitstream filters for the output stream
      * needs to be done here, because the codec id for streamcopy is not
@@ -806,7 +823,7 @@ static void ost_free(OutputStream **post)
         ost->logfile = NULL;
     }
 
-    avcodec_parameters_free(&ost->par_in);
+    avcodec_parameters_free(&ms->par_in);
 
     av_bsf_free(&ms->bsf_ctx);
     av_packet_free(&ms->bsf_pkt);
