@@ -57,6 +57,8 @@ static const struct {
     { AV_CPU_FLAG_SETEND,    "setend"     },
 #elif ARCH_PPC
     { AV_CPU_FLAG_ALTIVEC,   "altivec"    },
+    { AV_CPU_FLAG_VSX,       "vsx"        },
+    { AV_CPU_FLAG_POWER8,    "power8"     },
 #elif ARCH_MIPS
     { AV_CPU_FLAG_MMI,       "mmi"        },
     { AV_CPU_FLAG_MSA,       "msa"        },
@@ -165,7 +167,7 @@ int main(int argc, char **argv)
     print_cpu_flags(cpu_flags_raw, "raw");
     print_cpu_flags(cpu_flags_eff, "effective");
     printf("threads = %s (cpu_count = %d)\n", threads, cpu_count);
-#if ARCH_AARCH64
+#if ARCH_AARCH64 && HAVE_SVE
     if (cpu_flags_raw & AV_CPU_FLAG_SVE)
         printf("sve_vector_length = %d\n", 8 * ff_aarch64_sve_length());
 #endif

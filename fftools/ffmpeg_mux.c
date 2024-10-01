@@ -661,8 +661,8 @@ static int check_written(OutputFile *of)
 
         total_packets_written += packets_written;
 
-        if (ost->enc_ctx &&
-            (ost->enc_ctx->flags & (AV_CODEC_FLAG_PASS1 | AV_CODEC_FLAG_PASS2))
+        if (ost->enc &&
+            (ost->enc->enc_ctx->flags & (AV_CODEC_FLAG_PASS1 | AV_CODEC_FLAG_PASS2))
              != AV_CODEC_FLAG_PASS1)
             pass1_used = 0;
 
@@ -723,9 +723,9 @@ static void mux_final_stats(Muxer *mux)
                of->index, j, av_get_media_type_string(type));
         if (ost->enc) {
             av_log(of, AV_LOG_VERBOSE, "%"PRIu64" frames encoded",
-                   ost->frames_encoded);
+                   ost->enc->frames_encoded);
             if (type == AVMEDIA_TYPE_AUDIO)
-                av_log(of, AV_LOG_VERBOSE, " (%"PRIu64" samples)", ost->samples_encoded);
+                av_log(of, AV_LOG_VERBOSE, " (%"PRIu64" samples)", ost->enc->samples_encoded);
             av_log(of, AV_LOG_VERBOSE, "; ");
         }
 
@@ -836,10 +836,6 @@ static void ost_free(OutputStream **post)
     av_freep(&ost->logfile_prefix);
 
     av_freep(&ost->attachment_filename);
-
-    if (ost->enc_ctx)
-        av_freep(&ost->enc_ctx->stats_in);
-    avcodec_free_context(&ost->enc_ctx);
 
     enc_stats_uninit(&ost->enc_stats_pre);
     enc_stats_uninit(&ost->enc_stats_post);
