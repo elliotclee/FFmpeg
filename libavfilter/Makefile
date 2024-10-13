@@ -218,7 +218,8 @@ OBJS-$(CONFIG_BOXBLUR_OPENCL_FILTER)         += vf_avgblur_opencl.o opencl.o \
 OBJS-$(CONFIG_BWDIF_FILTER)                  += vf_bwdif.o bwdifdsp.o yadif_common.o
 OBJS-$(CONFIG_BWDIF_CUDA_FILTER)             += vf_bwdif_cuda.o vf_bwdif_cuda.ptx.o \
                                                 yadif_common.o
-OBJS-$(CONFIG_BWDIF_VULKAN_FILTER)           += vf_bwdif_vulkan.o yadif_common.o vulkan.o vulkan_filter.o
+OBJS-$(CONFIG_BWDIF_VULKAN_FILTER)           += vf_bwdif_vulkan.o yadif_common.o vulkan.o vulkan_filter.o \
+                                                vulkan/bwdif.o
 OBJS-$(CONFIG_CAS_FILTER)                    += vf_cas.o
 OBJS-$(CONFIG_CCREPACK_FILTER)               += vf_ccrepack.o
 OBJS-$(CONFIG_CHROMABER_VULKAN_FILTER)       += vf_chromaber_vulkan.o vulkan.o vulkan_filter.o
@@ -394,6 +395,7 @@ OBJS-$(CONFIG_MIX_FILTER)                    += vf_mix.o framesync.o
 OBJS-$(CONFIG_MONOCHROME_FILTER)             += vf_monochrome.o
 OBJS-$(CONFIG_MORPHO_FILTER)                 += vf_morpho.o framesync.o
 OBJS-$(CONFIG_MPDECIMATE_FILTER)             += vf_mpdecimate.o
+OBJS-$(CONFIG_MSAD_FILTER)                   += vf_identity.o framesync.o
 OBJS-$(CONFIG_MULTIPLY_FILTER)               += vf_multiply.o framesync.o
 OBJS-$(CONFIG_NEGATE_FILTER)                 += vf_negate.o
 OBJS-$(CONFIG_NLMEANS_FILTER)                += vf_nlmeans.o
@@ -436,7 +438,7 @@ OBJS-$(CONFIG_PREWITT_OPENCL_FILTER)         += vf_convolution_opencl.o opencl.o
 OBJS-$(CONFIG_PROCAMP_VAAPI_FILTER)          += vf_procamp_vaapi.o vaapi_vpp.o
 OBJS-$(CONFIG_PROGRAM_OPENCL_FILTER)         += vf_program_opencl.o opencl.o framesync.o
 OBJS-$(CONFIG_PSEUDOCOLOR_FILTER)            += vf_pseudocolor.o
-OBJS-$(CONFIG_PSNR_FILTER)                   += vf_psnr.o framesync.o
+OBJS-$(CONFIG_PSNR_FILTER)                   += vf_psnr.o framesync.o psnr.o
 OBJS-$(CONFIG_PULLUP_FILTER)                 += vf_pullup.o
 OBJS-$(CONFIG_QP_FILTER)                     += vf_qp.o
 OBJS-$(CONFIG_QUIRC_FILTER)                  += vf_quirc.o
@@ -565,7 +567,7 @@ OBJS-$(CONFIG_XFADE_FILTER)                  += vf_xfade.o
 OBJS-$(CONFIG_XFADE_OPENCL_FILTER)           += vf_xfade_opencl.o opencl.o opencl/xfade.o
 OBJS-$(CONFIG_XFADE_VULKAN_FILTER)           += vf_xfade_vulkan.o vulkan.o vulkan_filter.o
 OBJS-$(CONFIG_XMEDIAN_FILTER)                += vf_xmedian.o framesync.o
-OBJS-$(CONFIG_XPSNR_FILTER)                  += vf_xpsnr.o framesync.o
+OBJS-$(CONFIG_XPSNR_FILTER)                  += vf_xpsnr.o framesync.o psnr.o
 OBJS-$(CONFIG_XSTACK_FILTER)                 += vf_stack.o framesync.o
 OBJS-$(CONFIG_YADIF_FILTER)                  += vf_yadif.o yadif_common.o
 OBJS-$(CONFIG_YADIF_CUDA_FILTER)             += vf_yadif_cuda.o vf_yadif_cuda.ptx.o \
@@ -661,9 +663,7 @@ SKIPHEADERS-$(CONFIG_LIBVIDSTAB)             += vidstabutils.h
 SKIPHEADERS-$(CONFIG_QSVVPP)                 += qsvvpp.h stack_internal.h
 SKIPHEADERS-$(CONFIG_OPENCL)                 += opencl.h
 SKIPHEADERS-$(CONFIG_VAAPI)                  += vaapi_vpp.h stack_internal.h
-SKIPHEADERS-$(CONFIG_VULKAN)                 += vulkan.h vulkan_filter.h
-SKIPHEADERS-$(CONFIG_LIBSHADERC)             += vulkan_spirv.h
-SKIPHEADERS-$(CONFIG_LIBGLSLANG)             += vulkan_spirv.h
+SKIPHEADERS-$(CONFIG_VULKAN)                 += vulkan_filter.h
 
 TOOLS     = graph2dot
 TESTPROGS = drawutils filtfmts formats integral
@@ -683,6 +683,6 @@ libavfilter/opencl/%.c: $(SRC_PATH)/libavfilter/opencl/%.cl
 
 VULKAN = $(subst $(SRC_PATH)/,,$(wildcard $(SRC_PATH)/libavfilter/vulkan/*.comp))
 .SECONDARY: $(VULKAN:.comp=.c)
-libavfilter/vulkan/%.c: TAG = OPENCL
+libavfilter/vulkan/%.c: TAG = VULKAN
 libavfilter/vulkan/%.c: $(SRC_PATH)/libavfilter/vulkan/%.comp
 	$(M)$(SRC_PATH)/tools/source2c $< $@

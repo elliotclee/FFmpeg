@@ -16,18 +16,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVFILTER_VULKAN_SPIRV_H
-#define AVFILTER_VULKAN_SPIRV_H
-
-#include "libavutil/vulkan.h"
+#ifndef AVUTIL_VULKAN_SPIRV_H
+#define AVUTIL_VULKAN_SPIRV_H
 
 #include "vulkan.h"
+
 #include "config.h"
 
 typedef struct FFVkSPIRVCompiler {
     void *priv;
-    int (*compile_shader)(struct FFVkSPIRVCompiler *ctx, void *avctx,
-                          struct FFVkSPIRVShader *shd, uint8_t **data,
+    int (*compile_shader)(FFVulkanContext *s, struct FFVkSPIRVCompiler *ctx,
+                          FFVulkanShader *shd, uint8_t **data,
                           size_t *size, const char *entrypoint, void **opaque);
     void (*free_shader)(struct FFVkSPIRVCompiler *ctx, void **opaque);
     void (*uninit)(struct FFVkSPIRVCompiler **ctx);
@@ -42,4 +41,4 @@ FFVkSPIRVCompiler *ff_vk_shaderc_init(void);
 #define ff_vk_spirv_init ff_vk_shaderc_init
 #endif
 
-#endif /* AVFILTER_VULKAN_H */
+#endif /* AVUTIL_VULKAN_H */

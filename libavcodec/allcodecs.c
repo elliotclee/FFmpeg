@@ -345,12 +345,14 @@ extern const FFCodec ff_utvideo_decoder;
 extern const FFCodec ff_v210_encoder;
 extern const FFCodec ff_v210_decoder;
 extern const FFCodec ff_v210x_decoder;
+#if FF_API_V408_CODECID
 extern const FFCodec ff_v308_encoder;
 extern const FFCodec ff_v308_decoder;
 extern const FFCodec ff_v408_encoder;
 extern const FFCodec ff_v408_decoder;
 extern const FFCodec ff_v410_encoder;
 extern const FFCodec ff_v410_decoder;
+#endif
 extern const FFCodec ff_vb_decoder;
 extern const FFCodec ff_vbn_encoder;
 extern const FFCodec ff_vbn_decoder;
@@ -839,6 +841,7 @@ extern const FFCodec ff_av1_nvenc_encoder;
 extern const FFCodec ff_av1_qsv_decoder;
 extern const FFCodec ff_av1_qsv_encoder;
 extern const FFCodec ff_av1_amf_encoder;
+extern const FFCodec ff_av1_mf_encoder;
 extern const FFCodec ff_av1_vaapi_encoder;
 extern const FFCodec ff_libopenh264_encoder;
 extern const FFCodec ff_libopenh264_decoder;
