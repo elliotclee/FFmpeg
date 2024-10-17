@@ -325,7 +325,8 @@ static void sub2video_push_ref(InputFilterPriv *ifp, int64_t pts)
                                        AV_BUFFERSRC_FLAG_KEEP_REF |
                                        AV_BUFFERSRC_FLAG_PUSH);
     if (ret != AVERROR_EOF && ret < 0)
-        av_log(NULL, AV_LOG_WARNING, "Error while add the frame to buffer source(%s).\n",
+        av_log(ifp->ifilter.graph, AV_LOG_WARNING,
+               "Error while add the frame to buffer source(%s).\n",
                av_err2str(ret));
 }
 
@@ -355,7 +356,7 @@ static void sub2video_update(InputFilterPriv *ifp, int64_t heartbeat_pts,
         num_rects = 0;
     }
     if (sub2video_get_blank_frame(ifp) < 0) {
-        av_log(NULL, AV_LOG_ERROR,
+        av_log(ifp->ifilter.graph, AV_LOG_ERROR,
                "Impossible to get a blank canvas.\n");
         return;
     }
@@ -425,7 +426,8 @@ static void choose_channel_layouts(OutputFilterPriv *ofp, AVBPrint *bprint)
     av_bprint_chars(bprint, ':', 1);
 }
 
-static int read_binary(const char *path, uint8_t **data, int *len)
+static int read_binary(void *logctx, const char *path,
+                       uint8_t **data, int *len)
 {
     AVIOContext *io = NULL;
     int64_t fsize;
@@ -436,14 +438,14 @@ static int read_binary(const char *path, uint8_t **data, int *len)
 
     ret = avio_open2(&io, path, AVIO_FLAG_READ, &int_cb, NULL);
     if (ret < 0) {
-        av_log(NULL, AV_LOG_ERROR, "Cannot open file '%s': %s\n",
+        av_log(logctx, AV_LOG_ERROR, "Cannot open file '%s': %s\n",
                path, av_err2str(ret));
         return ret;
     }
 
     fsize = avio_size(io);
     if (fsize < 0 || fsize > INT_MAX) {
-        av_log(NULL, AV_LOG_ERROR, "Cannot obtain size of file %s\n", path);
+        av_log(logctx, AV_LOG_ERROR, "Cannot obtain size of file %s\n", path);
         ret = AVERROR(EIO);
         goto fail;
     }
@@ -456,7 +458,7 @@ static int read_binary(const char *path, uint8_t **data, int *len)
 
     ret = avio_read(io, *data, fsize);
     if (ret != fsize) {
-        av_log(NULL, AV_LOG_ERROR, "Error reading file %s\n", path);
+        av_log(logctx, AV_LOG_ERROR, "Error reading file %s\n", path);
         ret = ret < 0 ? ret : AVERROR(EIO);
         goto fail;
     }
@@ -473,7 +475,8 @@ fail:
     return ret;
 }
 
-static int filter_opt_apply(AVFilterContext *f, const char *key, const char *val)
+static int filter_opt_apply(void *logctx, AVFilterContext *f,
+                            const char *key, const char *val)
 {
     const AVOption *o = NULL;
     int ret;
@@ -495,7 +498,7 @@ static int filter_opt_apply(AVFilterContext *f, const char *key, const char *val
         uint8_t *data;
         int      len;
 
-        ret = read_binary(val, &data, &len);
+        ret = read_binary(logctx, val, &data, &len);
         if (ret < 0)
             goto err_load;
 
@@ -517,18 +520,18 @@ static int filter_opt_apply(AVFilterContext *f, const char *key, const char *val
     return 0;
 
 err_apply:
-    av_log(NULL, AV_LOG_ERROR,
+    av_log(logctx, AV_LOG_ERROR,
            "Error applying option '%s' to filter '%s': %s\n",
            key, f->filter->name, av_err2str(ret));
     return ret;
 err_load:
-    av_log(NULL, AV_LOG_ERROR,
+    av_log(logctx, AV_LOG_ERROR,
            "Error loading value for option '%s' from file '%s'\n",
            key, val);
     return ret;
 }
 
-static int graph_opts_apply(AVFilterGraphSegment *seg)
+static int graph_opts_apply(void *logctx, AVFilterGraphSegment *seg)
 {
     for (size_t i = 0; i < seg->nb_chains; i++) {
         AVFilterChain *ch = seg->chains[i];
@@ -540,7 +543,7 @@ static int graph_opts_apply(AVFilterGraphSegment *seg)
             av_assert0(p->filter);
 
             while ((e = av_dict_iterate(p->opts, e))) {
-                int ret = filter_opt_apply(p->filter, e->key, e->value);
+                int ret = filter_opt_apply(logctx, p->filter, e->key, e->value);
                 if (ret < 0)
                     return ret;
             }
@@ -552,7 +555,8 @@ static int graph_opts_apply(AVFilterGraphSegment *seg)
     return 0;
 }
 
-static int graph_parse(AVFilterGraph *graph, const char *desc,
+static int graph_parse(void *logctx,
+                       AVFilterGraph *graph, const char *desc,
                        AVFilterInOut **inputs, AVFilterInOut **outputs,
                        AVBufferRef *hw_device)
 {
@@ -584,7 +588,7 @@ static int graph_parse(AVFilterGraph *graph, const char *desc,
         }
     }
 
-    ret = graph_opts_apply(seg);
+    ret = graph_opts_apply(logctx, seg);
     if (ret < 0)
         goto fail;
 
@@ -1097,15 +1101,16 @@ int fg_create(FilterGraph **pfg, char *graph_desc, Scheduler *sch)
         return AVERROR(ENOMEM);;
     graph->nb_threads = 1;
 
-    ret = graph_parse(graph, fgp->graph_desc, &inputs, &outputs,
+    ret = graph_parse(fg, graph, fgp->graph_desc, &inputs, &outputs,
                       hw_device_for_filter());
     if (ret < 0)
         goto fail;
 
     for (unsigned i = 0; i < graph->nb_filters; i++) {
         const AVFilter *f = graph->filters[i]->filter;
-        if (!avfilter_filter_pad_count(f, 0) &&
-            !(f->flags & AVFILTER_FLAG_DYNAMIC_INPUTS)) {
+        if ((!avfilter_filter_pad_count(f, 0) &&
+             !(f->flags & AVFILTER_FLAG_DYNAMIC_INPUTS)) ||
+            !strcmp(f->name, "apad")) {
             fgp->have_sources = 1;
             break;
         }
@@ -1425,7 +1430,7 @@ int fg_finalise_bindings(void)
     return 0;
 }
 
-static int insert_trim(int64_t start_time, int64_t duration,
+static int insert_trim(void *logctx, int64_t start_time, int64_t duration,
                        AVFilterContext **last_filter, int *pad_idx,
                        const char *filter_name)
 {
@@ -1441,7 +1446,7 @@ static int insert_trim(int64_t start_time, int64_t duration,
 
     trim = avfilter_get_by_name(name);
     if (!trim) {
-        av_log(NULL, AV_LOG_ERROR, "%s filter not present, cannot limit "
+        av_log(logctx, AV_LOG_ERROR, "%s filter not present, cannot limit "
                "recording time.\n", name);
         return AVERROR_FILTER_NOT_FOUND;
     }
@@ -1502,7 +1507,7 @@ static int insert_filter(AVFilterContext **last_filter, int *pad_idx,
     return 0;
 }
 
-static int configure_output_video_filter(FilterGraph *fg, AVFilterGraph *graph,
+static int configure_output_video_filter(FilterGraphPriv *fgp, AVFilterGraph *graph,
                                          OutputFilter *ofilter, AVFilterInOut *out)
 {
     OutputFilterPriv *ofp = ofp_from_ofilter(ofilter);
@@ -1569,7 +1574,7 @@ static int configure_output_video_filter(FilterGraph *fg, AVFilterGraph *graph,
     }
 
     snprintf(name, sizeof(name), "trim_out_%s", ofp->name);
-    ret = insert_trim(ofp->trim_start_us, ofp->trim_duration_us,
+    ret = insert_trim(fgp, ofp->trim_start_us, ofp->trim_duration_us,
                       &last_filter, &pad_idx, name);
     if (ret < 0)
         return ret;
@@ -1581,7 +1586,7 @@ static int configure_output_video_filter(FilterGraph *fg, AVFilterGraph *graph,
     return 0;
 }
 
-static int configure_output_audio_filter(FilterGraph *fg, AVFilterGraph *graph,
+static int configure_output_audio_filter(FilterGraphPriv *fgp, AVFilterGraph *graph,
                                          OutputFilter *ofilter, AVFilterInOut *out)
 {
     OutputFilterPriv *ofp = ofp_from_ofilter(ofilter);
@@ -1644,11 +1649,13 @@ static int configure_output_audio_filter(FilterGraph *fg, AVFilterGraph *graph,
         pad_idx = 0;
     }
 
-    if (ofilter->apad)
+    if (ofilter->apad) {
         AUTO_INSERT_FILTER("-apad", "apad", ofilter->apad);
+        fgp->have_sources = 1;
+    }
 
     snprintf(name, sizeof(name), "trim for output %s", ofp->name);
-    ret = insert_trim(ofp->trim_start_us, ofp->trim_duration_us,
+    ret = insert_trim(fgp, ofp->trim_start_us, ofp->trim_duration_us,
                       &last_filter, &pad_idx, name);
     if (ret < 0)
         goto fail;
@@ -1661,12 +1668,12 @@ fail:
     return ret;
 }
 
-static int configure_output_filter(FilterGraph *fg, AVFilterGraph *graph,
+static int configure_output_filter(FilterGraphPriv *fgp, AVFilterGraph *graph,
                                    OutputFilter *ofilter, AVFilterInOut *out)
 {
     switch (ofilter->type) {
-    case AVMEDIA_TYPE_VIDEO: return configure_output_video_filter(fg, graph, ofilter, out);
-    case AVMEDIA_TYPE_AUDIO: return configure_output_audio_filter(fg, graph, ofilter, out);
+    case AVMEDIA_TYPE_VIDEO: return configure_output_video_filter(fgp, graph, ofilter, out);
+    case AVMEDIA_TYPE_AUDIO: return configure_output_audio_filter(fgp, graph, ofilter, out);
     default: av_assert0(0); return 0;
     }
 }
@@ -1783,7 +1790,7 @@ static int configure_input_video_filter(FilterGraph *fg, AVFilterGraph *graph,
     }
 
     snprintf(name, sizeof(name), "trim_in_%s", ifp->opts.name);
-    ret = insert_trim(ifp->opts.trim_start_us, ifp->opts.trim_end_us,
+    ret = insert_trim(fg, ifp->opts.trim_start_us, ifp->opts.trim_end_us,
                       &last_filter, &pad_idx, name);
     if (ret < 0)
         return ret;
@@ -1827,7 +1834,7 @@ static int configure_input_audio_filter(FilterGraph *fg, AVFilterGraph *graph,
     last_filter = ifp->filter;
 
     snprintf(name, sizeof(name), "trim for input stream %s", ifp->opts.name);
-    ret = insert_trim(ifp->opts.trim_start_us, ifp->opts.trim_end_us,
+    ret = insert_trim(fg, ifp->opts.trim_start_us, ifp->opts.trim_end_us,
                       &last_filter, &pad_idx, name);
     if (ret < 0)
         return ret;
@@ -1932,7 +1939,8 @@ static int configure_filtergraph(FilterGraph *fg, FilterGraphThread *fgt)
 
     hw_device = hw_device_for_filter();
 
-    if ((ret = graph_parse(fgt->graph, graph_desc, &inputs, &outputs, hw_device)) < 0)
+    ret = graph_parse(fg, fgt->graph, graph_desc, &inputs, &outputs, hw_device);
+    if (ret < 0)
         goto fail;
 
     for (cur = inputs, i = 0; cur; cur = cur->next, i++)
@@ -1944,7 +1952,7 @@ static int configure_filtergraph(FilterGraph *fg, FilterGraphThread *fgt)
     avfilter_inout_free(&inputs);
 
     for (cur = outputs, i = 0; cur; cur = cur->next, i++) {
-        ret = configure_output_filter(fg, fgt->graph, fg->outputs[i], cur);
+        ret = configure_output_filter(fgp, fgt->graph, fg->outputs[i], cur);
         if (ret < 0) {
             avfilter_inout_free(&outputs);
             goto fail;
@@ -2198,8 +2206,8 @@ finish:
     return 0;
 }
 
-static double adjust_frame_pts_to_encoder_tb(AVFrame *frame, AVRational tb_dst,
-                                             int64_t start_time)
+static double adjust_frame_pts_to_encoder_tb(void *logctx, AVFrame *frame,
+                                             AVRational tb_dst, int64_t start_time)
 {
     double float_pts = AV_NOPTS_VALUE; // this is identical to frame.pts but with higher precision
 
@@ -2227,7 +2235,8 @@ static double adjust_frame_pts_to_encoder_tb(AVFrame *frame, AVRational tb_dst,
 early_exit:
 
     if (debug_ts) {
-        av_log(NULL, AV_LOG_INFO, "filter -> pts:%s pts_time:%s exact:%f time_base:%d/%d\n",
+        av_log(logctx, AV_LOG_INFO,
+               "filter -> pts:%s pts_time:%s exact:%f time_base:%d/%d\n",
                frame ? av_ts2str(frame->pts) : "NULL",
                av_ts2timestr(frame->pts, &tb_dst),
                float_pts, tb_dst.num, tb_dst.den);
@@ -2262,7 +2271,8 @@ static void video_sync_process(OutputFilterPriv *ofp, AVFrame *frame,
 
     duration = frame->duration * av_q2d(frame->time_base) / av_q2d(ofp->tb_out);
 
-    sync_ipts = adjust_frame_pts_to_encoder_tb(frame, ofp->tb_out, ofp->ts_offset);
+    sync_ipts = adjust_frame_pts_to_encoder_tb(ofilter->graph, frame,
+                                               ofp->tb_out, ofp->ts_offset);
     /* delta0 is the "drift" between the input frame and
      * where it would fall in the output. */
     delta0 = sync_ipts - ofp->next_pts;
@@ -2741,14 +2751,14 @@ static int send_eof(FilterGraphThread *fgt, InputFilter *ifilter,
             if (ifilter_has_all_input_formats(ifilter->graph)) {
                 ret = configure_filtergraph(ifilter->graph, fgt);
                 if (ret < 0) {
-                    av_log(NULL, AV_LOG_ERROR, "Error initializing filters!\n");
+                    av_log(ifilter->graph, AV_LOG_ERROR, "Error initializing filters!\n");
                     return ret;
                 }
             }
         }
 
         if (ifp->format < 0) {
-            av_log(NULL, AV_LOG_ERROR,
+            av_log(ifilter->graph, AV_LOG_ERROR,
                    "Cannot determine format of input %s after EOF\n",
                    ifp->opts.name);
             return AVERROR_INVALIDDATA;

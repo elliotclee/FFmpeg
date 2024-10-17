@@ -23,6 +23,8 @@ is16BPS:
   rgba64le
   rgbaf16be
   rgbaf16le
+  rgbf16be
+  rgbf16le
   ya16be
   ya16le
   yuv420p16be
@@ -178,9 +180,12 @@ isBE:
   rgb48be
   rgb555be
   rgb565be
+  rgb96be
+  rgba128be
   rgba64be
   rgbaf16be
   rgbaf32be
+  rgbf16be
   rgbf32be
   v30xbe
   x2bgr10be
@@ -538,12 +543,18 @@ isRGB:
   rgb565be
   rgb565le
   rgb8
+  rgb96be
+  rgb96le
+  rgba128be
+  rgba128le
   rgba64be
   rgba64le
   rgbaf16be
   rgbaf16le
   rgbaf32be
   rgbaf32le
+  rgbf16be
+  rgbf16le
   rgbf32be
   rgbf32le
   x2bgr10be
@@ -696,12 +707,18 @@ AnyRGB:
   rgb565be
   rgb565le
   rgb8
+  rgb96be
+  rgb96le
+  rgba128be
+  rgba128le
   rgba64be
   rgba64le
   rgbaf16be
   rgbaf16le
   rgbaf32be
   rgbaf32le
+  rgbf16be
+  rgbf16le
   rgbf32be
   rgbf32le
   x2bgr10be
@@ -731,6 +748,8 @@ ALPHA:
   pal8
   rgb32
   rgb32_1
+  rgba128be
+  rgba128le
   rgba64be
   rgba64le
   rgbaf16be
@@ -821,12 +840,18 @@ Packed:
   rgb565be
   rgb565le
   rgb8
+  rgb96be
+  rgb96le
+  rgba128be
+  rgba128le
   rgba64be
   rgba64le
   rgbaf16be
   rgbaf16le
   rgbaf32be
   rgbaf32le
+  rgbf16be
+  rgbf16le
   rgbf32be
   rgbf32le
   uyva
@@ -1025,12 +1050,18 @@ PackedRGB:
   rgb565be
   rgb565le
   rgb8
+  rgb96be
+  rgb96le
+  rgba128be
+  rgba128le
   rgba64be
   rgba64le
   rgbaf16be
   rgbaf16le
   rgbaf32be
   rgbaf32le
+  rgbf16be
+  rgbf16le
   rgbf32be
   rgbf32le
   x2bgr10be
