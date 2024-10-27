@@ -63,11 +63,11 @@ nv21                1bcfc197f4fb95de85ba58182d8d2f69
 nv24                514c8f12082f0737e558778cbe7de258
 nv42                ece9baae1c5de579dac2c66a89e08ef3
 p010be              8b2de2eb6b099bbf355bfc55a0694ddc
-p010le              373b50c766dfd0a8e79c9a73246d803a
+p010le              a1e4f713e145dfc465bfe0cc77096a03
 p012be              8b2de2eb6b099bbf355bfc55a0694ddc
 p012le              a1e4f713e145dfc465bfe0cc77096a03
 p016be              8b2de2eb6b099bbf355bfc55a0694ddc
-p016le              373b50c766dfd0a8e79c9a73246d803a
+p016le              a1e4f713e145dfc465bfe0cc77096a03
 p210be              2947f43774352ef61f9e83777548c7c5
 p210le              74fcd5a32eee687eebe002c884103963
 p212be              c983aa869bae2c70e7b01810902ffc05
@@ -106,6 +106,8 @@ x2rgb10le           f4265aca7a67dbfa9354370098ca6f33
 xv30le              7e2350aea136c6fb76dae54e9d3fe1f8
 xv36be              23b6f253fcb375e4145cfcb562268c5f
 xv36le              778286003497f92b84d0bd8258d6b85d
+xv48be              c90889b2cf54cc78bd58e8c47d4eb791
+xv48le              2c15c1254449ec5f9135ae61bdf4e1d5
 xyz12be             cb4571f9aaa7b59f999ef327276104b7
 xyz12le             cd6aae8d26b18bdb4b9d068586276d91
 ya16be              a3d18014454942a96f15a49947c0c55d

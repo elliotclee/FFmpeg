@@ -883,10 +883,6 @@ int ff_vk_alloc_mem(FFVulkanContext *s, VkMemoryRequirements *req,
         .pNext           = alloc_extension,
     };
 
-    /* Align if we need to */
-    if ((req_flags != UINT32_MAX) && req_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-        req->size = FFALIGN(req->size, s->props.properties.limits.minMemoryMapAlignment);
-
     alloc_info.allocationSize = req->size;
 
     /* The vulkan spec requires memory types to be sorted in the "optimal"
@@ -939,8 +935,9 @@ int ff_vk_create_buf(FFVulkanContext *s, FFVkBuffer *buf, size_t size,
         .pNext       = pNext,
         .usage       = usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .size        = size, /* Gets FFALIGNED during alloc if host visible
-                                but should be ok */
+        .size        = flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ?
+                       FFALIGN(size, s->props.properties.limits.minMemoryMapAlignment) :
+                       size,
     };
 
     VkMemoryAllocateFlagsInfo alloc_flags = {
@@ -961,6 +958,10 @@ int ff_vk_create_buf(FFVulkanContext *s, FFVkBuffer *buf, size_t size,
         .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
         .pNext = &ded_req,
     };
+
+    av_log(s, AV_LOG_DEBUG, "Creating a buffer of %"SIZE_SPECIFIER" bytes, "
+                            "usage: 0x%x, flags: 0x%x\n",
+           size, usage, flags);
 
     ret = vk->CreateBuffer(s->hwctx->act_dev, &buf_spawn, s->hwctx->alloc, &buf->buf);
     if (ret != VK_SUCCESS) {
@@ -1200,9 +1201,6 @@ int ff_vk_get_pooled_buffer(FFVulkanContext *ctx, AVBufferPool **buf_pool,
     ff_vk_free_buf(ctx, data);
     memset(data, 0, sizeof(*data));
 
-    av_log(ctx, AV_LOG_DEBUG, "Allocating buffer of %"SIZE_SPECIFIER" bytes for pool %p\n",
-           size, *buf_pool);
-
     err = ff_vk_create_buf(ctx, data, size,
                            create_pNext, NULL, usage,
                            mem_props);
@@ -1302,6 +1300,7 @@ const char *ff_vk_shader_rep_fmt(enum AVPixelFormat pix_fmt,
     case AV_PIX_FMT_RGB0:
     case AV_PIX_FMT_RGB565:
     case AV_PIX_FMT_BGR565:
+    case AV_PIX_FMT_UYVA:
     case AV_PIX_FMT_YUYV422:
     case AV_PIX_FMT_UYVY422: {
         const char *rep_tab[] = {
@@ -1327,7 +1326,9 @@ const char *ff_vk_shader_rep_fmt(enum AVPixelFormat pix_fmt,
     case AV_PIX_FMT_RGB48:
     case AV_PIX_FMT_RGBA64:
     case AV_PIX_FMT_Y212:
-    case AV_PIX_FMT_XV36: {
+    case AV_PIX_FMT_Y216:
+    case AV_PIX_FMT_XV36:
+    case AV_PIX_FMT_XV48: {
         const char *rep_tab[] = {
             [FF_VK_REP_NATIVE] = "rgba16ui",
             [FF_VK_REP_FLOAT] = "rgba16",

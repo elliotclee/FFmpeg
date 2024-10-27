@@ -115,17 +115,26 @@ fate-filter-yuvtestsrc-yuv444p12: CMD = framecrc -lavfi yuvtestsrc=rate=5:durati
 FATE_FILTER-$(call FILTERFRAMECRC, YUVTESTSRC) += fate-filter-yuvtestsrc-ayuv
 fate-filter-yuvtestsrc-ayuv: CMD = framecrc -lavfi yuvtestsrc=rate=5:duration=1 -pix_fmt ayuv
 
+FATE_FILTER-$(call FILTERFRAMECRC, YUVTESTSRC SCALE) += fate-filter-yuvtestsrc-ayuv64
+fate-filter-yuvtestsrc-ayuv64: CMD = framecrc -lavfi yuvtestsrc=rate=5:duration=1,format=ayuv64,scale -pix_fmt ayuv64le
+
 FATE_FILTER-$(call FILTERFRAMECRC, YUVTESTSRC) += fate-filter-yuvtestsrc-vuya
 fate-filter-yuvtestsrc-vuya: CMD = framecrc -lavfi yuvtestsrc=rate=5:duration=1 -pix_fmt vuya
 
 FATE_FILTER-$(call FILTERFRAMECRC, YUVTESTSRC) += fate-filter-yuvtestsrc-vyu444
 fate-filter-yuvtestsrc-vyu444: CMD = framecrc -lavfi yuvtestsrc=rate=5:duration=1 -pix_fmt vyu444
 
+FATE_FILTER-$(call FILTERFRAMECRC, YUVTESTSRC) += fate-filter-yuvtestsrc-v30xle
+fate-filter-yuvtestsrc-v30xle: CMD = framecrc -lavfi yuvtestsrc=rate=5:duration=1 -pix_fmt v30xle
+
 FATE_FILTER-$(call FILTERFRAMECRC, YUVTESTSRC) += fate-filter-yuvtestsrc-xv30le
 fate-filter-yuvtestsrc-xv30le: CMD = framecrc -lavfi yuvtestsrc=rate=5:duration=1 -pix_fmt xv30le
 
 FATE_FILTER-$(call FILTERFRAMECRC, YUVTESTSRC SCALE) += fate-filter-yuvtestsrc-xv36
 fate-filter-yuvtestsrc-xv36: CMD = framecrc -lavfi yuvtestsrc=rate=5:duration=1,format=xv36,scale -pix_fmt xv36le
+
+FATE_FILTER-$(call FILTERFRAMECRC, YUVTESTSRC SCALE) += fate-filter-yuvtestsrc-xv48
+fate-filter-yuvtestsrc-xv48: CMD = framecrc -lavfi yuvtestsrc=rate=5:duration=1,format=xv48,scale -pix_fmt xv48le
 
 FATE_FILTER-$(call FILTERFRAMECRC, TESTSRC FORMAT CONCAT SCALE, LAVFI_INDEV FILE_PROTOCOL) += fate-filter-lavd-scalenorm
 fate-filter-lavd-scalenorm: tests/data/filtergraphs/scalenorm
@@ -585,7 +594,7 @@ ifneq (,$(RUNNING_PIXFMTS_TESTS))
 endif
 
 FATE_FILTER_PIXDESC-$(call VIDEO_FILTER, SCALE FORMAT PIXDESCTEST) += $(addprefix fate-filter-pixdesc-, $(PIXFMTS))
-fate-filter-pixdesc-%: CMD = video_filter "scale,format=$(@:fate-filter-pixdesc-%=%),pixdesctest" -pix_fmt $(@:fate-filter-pixdesc-%=%)
+fate-filter-pixdesc-%: CMD = pixdesc
 
 fate-filter-pixdesc: $(FATE_FILTER_PIXDESC-yes)
 FATE_FILTER_VSYNTH-yes += $(FATE_FILTER_PIXDESC-yes)
