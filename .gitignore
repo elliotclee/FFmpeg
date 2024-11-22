@@ -43,3 +43,5 @@
 /tools/python/__pycache__/
 /buildme.sh
 /build/
+/libavcodec/vulkan/*.c
+/libavfilter/vulkan/*.c
