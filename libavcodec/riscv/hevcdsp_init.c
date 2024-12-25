@@ -23,21 +23,18 @@
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
 #include "libavutil/riscv/cpu.h"
-#include "libavcodec/vvc/dsp.h"
 
-#define bf(fn, bd,  opt) fn##_##bd##_##opt
+#include "libavcodec/hevc/dsp.h"
+#include "libavcodec/riscv/h26x/h2656dsp.h"
 
-#define AVG_PROTOTYPES(bd, opt)                                                                      \
-void bf(ff_vvc_avg, bd, opt)(uint8_t *dst, ptrdiff_t dst_stride,                                     \
-    const int16_t *src0, const int16_t *src1, int width, int height);                                \
-void bf(ff_vvc_w_avg, bd, opt)(uint8_t *dst, ptrdiff_t dst_stride,                                   \
-    const int16_t *src0, const int16_t *src1, int width, int height,                                 \
-    int denom, int w0, int w1, int o0, int o1);
+#define RVV_FNASSIGN(member, v, h, fn, ext) \
+        member[1][v][h] = ff_h2656_put_pixels_##8_##ext;  \
+        member[3][v][h] = ff_h2656_put_pixels_##8_##ext;  \
+        member[5][v][h] = ff_h2656_put_pixels_##8_##ext; \
+        member[7][v][h] = ff_h2656_put_pixels_##8_##ext; \
+        member[9][v][h] = ff_h2656_put_pixels_##8_##ext;
 
-AVG_PROTOTYPES(8, rvv_128)
-AVG_PROTOTYPES(8, rvv_256)
-
-void ff_vvc_dsp_init_riscv(VVCDSPContext *const c, const int bd)
+void ff_hevc_dsp_init_riscv(HEVCDSPContext *c, const int bit_depth)
 {
 #if HAVE_RVV
     const int flags = av_get_cpu_flags();
@@ -48,23 +45,19 @@ void ff_vvc_dsp_init_riscv(VVCDSPContext *const c, const int bd)
 
     vlenb = ff_get_rv_vlenb();
     if (vlenb >= 32) {
-        switch (bd) {
+        switch (bit_depth) {
             case 8:
-                c->inter.avg    = ff_vvc_avg_8_rvv_256;
-# if (__riscv_xlen == 64)
-                c->inter.w_avg    = ff_vvc_w_avg_8_rvv_256;
-# endif
+                RVV_FNASSIGN(c->put_hevc_qpel, 0, 0, pel_pixels, rvv_256);
+                RVV_FNASSIGN(c->put_hevc_epel, 0, 0, pel_pixels, rvv_256);
                 break;
             default:
                 break;
         }
     } else if (vlenb >= 16) {
-        switch (bd) {
+        switch (bit_depth) {
             case 8:
-                c->inter.avg    = ff_vvc_avg_8_rvv_128;
-# if (__riscv_xlen == 64)
-                c->inter.w_avg    = ff_vvc_w_avg_8_rvv_128;
-# endif
+                RVV_FNASSIGN(c->put_hevc_qpel, 0, 0, pel_pixels, rvv_128);
+                RVV_FNASSIGN(c->put_hevc_epel, 0, 0, pel_pixels, rvv_128);
                 break;
             default:
                 break;

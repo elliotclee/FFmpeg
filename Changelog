@@ -6,6 +6,8 @@ version <next>:
 - VVC VAAPI decoder
 - RealVideo 6.0 decoder
 - OpenMAX encoders deprecated
+- libx265 alpha layer encoding
+- ADPCM IMA Xbox decoder
 
 version 7.1:
 - Raw Captions with Time (RCWT) closed caption demuxer
