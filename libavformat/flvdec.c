@@ -354,6 +354,7 @@ static void flv_set_audio_codec(AVFormatContext *s, AVStream *astream,
         return;
     case MKBETAG('O', 'p', 'u', 's'):
         apar->codec_id = AV_CODEC_ID_OPUS;
+        apar->sample_rate = 48000;
         return;
     case MKBETAG('.', 'm', 'p', '3'):
         apar->codec_id = AV_CODEC_ID_MP3;
@@ -936,6 +937,7 @@ static int flv_read_close(AVFormatContext *s)
         av_freep(&flv->new_extradata[i]);
     for (i = 0; i < flv->mt_extradata_cnt; i++)
         av_freep(&flv->mt_extradata[i]);
+    av_freep(&flv->mt_extradata);
     av_freep(&flv->mt_extradata_sz);
     av_freep(&flv->keyframe_times);
     av_freep(&flv->keyframe_filepositions);
@@ -973,18 +975,22 @@ static int flv_queue_extradata(FLVContext *flv, AVIOContext *pb, int stream,
         int new_count = stream + 1;
 
         if (flv->mt_extradata_cnt < new_count) {
-            flv->mt_extradata = av_realloc(flv->mt_extradata,
-                                           sizeof(*flv->mt_extradata) *
-                                           new_count);
-            flv->mt_extradata_sz = av_realloc(flv->mt_extradata_sz,
-                                              sizeof(*flv->mt_extradata_sz) *
-                                              new_count);
-            if (!flv->mt_extradata || !flv->mt_extradata_sz)
+            void *tmp = av_realloc_array(flv->mt_extradata, new_count,
+                                         sizeof(*flv->mt_extradata));
+            if (!tmp)
                 return AVERROR(ENOMEM);
+            flv->mt_extradata = tmp;
+
+            tmp = av_realloc_array(flv->mt_extradata_sz, new_count,
+                                   sizeof(*flv->mt_extradata_sz));
+            if (!tmp)
+                return AVERROR(ENOMEM);
+            flv->mt_extradata_sz = tmp;
+
             // Set newly allocated pointers/sizes to 0
             for (int i = flv->mt_extradata_cnt; i < new_count; i++) {
-                    flv->mt_extradata[i] = NULL;
-                    flv->mt_extradata_sz[i] = 0;
+                flv->mt_extradata[i] = NULL;
+                flv->mt_extradata_sz[i] = 0;
             }
             flv->mt_extradata_cnt = new_count;
         }
@@ -1274,15 +1280,15 @@ static int flv_update_video_color_info(AVFormatContext *s, AVStream *st)
 static int flv_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     FLVContext *flv = s->priv_data;
-    int ret, i, size, flags;
+    int ret = AVERROR_BUG, i, size, flags;
     int res = 0;
     enum FlvTagType type;
-    int stream_type=-1;
+    int stream_type = -1;
     int64_t next, pos, meta_pos;
     int64_t dts, pts = AV_NOPTS_VALUE;
     int av_uninit(channels);
     int av_uninit(sample_rate);
-    AVStream *st    = NULL;
+    AVStream *st = NULL;
     int last = -1;
     int orig_size;
     int enhanced_flv = 0;
@@ -1585,6 +1591,7 @@ retry_duration:
                     for (i = 0; i < channels; i++) {
                         uint8_t id = avio_r8(s->pb);
                         size--;
+                        track_size--;
 
                         if (id < 18)
                             st->codecpar->ch_layout.u.map[i].id = id;
@@ -1611,7 +1618,7 @@ retry_duration:
 
                 av_log(s, AV_LOG_DEBUG, "Set channel data from MultiChannel info.\n");
 
-                goto leave;
+                goto next_track;
             }
         } else if (stream_type == FLV_STREAM_TYPE_VIDEO) {
             int sret = flv_set_video_codec(s, st, codec_id, 1);
@@ -1757,6 +1764,7 @@ retry_duration:
             return ret;
         res = FFERROR_REDO;
 
+next_track:
         if (track_size) {
             av_log(s, AV_LOG_WARNING, "Track size mismatch: %d!\n", track_size);
             avio_skip(s->pb, track_size);
@@ -1766,7 +1774,6 @@ retry_duration:
         if (!size)
             break;
 
-next_track:
         if (multitrack_type == MultitrackTypeOneTrack) {
             av_log(s, AV_LOG_ERROR, "Attempted to read next track in single-track mode.\n");
             ret = FFERROR_REDO;
@@ -1788,6 +1795,7 @@ next_track:
         }
     }
 
+    ret = 0;
 leave:
     last = avio_rb32(s->pb);
     if (!flv->trust_datasize) {
