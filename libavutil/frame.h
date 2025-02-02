@@ -297,6 +297,13 @@ enum AVSideDataProps {
      * adapting to a different set of primaries or transfer characteristics.
      */
     AV_SIDE_DATA_PROP_COLOR_DEPENDENT = (1 << 3),
+
+    /**
+     * Side data depends on the channel layout. Side data with this property
+     * loses its meaning when downmixing or upmixing, unless either recomputed
+     * or adjusted to the new layout.
+     */
+    AV_SIDE_DATA_PROP_CHANNEL_DEPENDENT = (1 << 4),
 };
 
 /**
@@ -666,7 +673,11 @@ typedef struct AVFrame {
  */
 #define AV_FRAME_FLAG_TOP_FIELD_FIRST (1 << 4)
 /**
- * A flag to mark frames which were encoded losslessly from the input.
+ * A decoder can use this flag to mark frames which were originally encoded losslessly.
+ *
+ * For coding bitstream formats which support both lossless and lossy
+ * encoding, it is sometimes possible for a decoder to determine which method
+ * was used when the bitsream was encoded.
  */
 #define AV_FRAME_FLAG_LOSSLESS        (1 << 5)
 /**
@@ -1082,6 +1093,11 @@ void av_frame_side_data_free(AVFrameSideData ***sd, int *nb_sd);
  * Applies only for side data types without the AV_SIDE_DATA_PROP_MULTI prop.
  */
 #define AV_FRAME_SIDE_DATA_FLAG_REPLACE (1 << 1)
+/**
+ * Create a new reference to the passed in buffer instead of taking ownership
+ * of it.
+ */
+#define AV_FRAME_SIDE_DATA_FLAG_NEW_REF (1 << 2)
 
 /**
  * Add new side data entry to an array.

@@ -117,6 +117,9 @@ enum {
     FLV_CODECID_H264    = 7,
     FLV_CODECID_REALH263= 8,
     FLV_CODECID_MPEG4   = 9,
+
+    // non-standard protocol extension that is in use in the wild
+    FLV_CODECID_X_HEVC  = 12,
 };
 
 enum {
@@ -127,6 +130,7 @@ enum {
     PacketTypeMetadata              = 4,
     PacketTypeMPEG2TSSequenceStart  = 5,
     PacketTypeMultitrack            = 6,
+    PacketTypeModEx                 = 7,
 };
 
 enum {
@@ -134,6 +138,10 @@ enum {
     AudioPacketTypeCodedFrames        = 1,
     AudioPacketTypeMultichannelConfig = 4,
     AudioPacketTypeMultitrack         = 5,
+};
+
+enum {
+    PacketModExTypeTimestampOffsetNano = 0,
 };
 
 enum {

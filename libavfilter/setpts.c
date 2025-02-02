@@ -98,6 +98,7 @@ typedef struct SetPTSContext {
     const AVClass *class;
     char *expr_str;
     AVExpr *expr;
+    int strip_fps;
     double var_values[VAR_VARS_NB];
     enum AVMediaType type;
 } SetPTSContext;
@@ -153,8 +154,10 @@ static int config_input(AVFilterLink *inlink)
 static int config_output_video(AVFilterLink *outlink)
 {
     FilterLink *l = ff_filter_link(outlink);
+    SetPTSContext *s = outlink->src->priv;
 
-    l->frame_rate = (AVRational){ 1, 0 };
+    if (s->strip_fps)
+        l->frame_rate = (AVRational){ 1, 0 };
 
     return 0;
 }
@@ -320,6 +323,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 #if CONFIG_SETPTS_FILTER
 static const AVOption setpts_options[] = {
     { "expr", "Expression determining the frame timestamp", OFFSET(expr_str), AV_OPT_TYPE_STRING, { .str = "PTS" }, .flags = V|F|R },
+    { "strip_fps",  "Unset framerate metadata", OFFSET(strip_fps), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, .flags = V|F },
     { NULL }
 };
 AVFILTER_DEFINE_CLASS(setpts);
@@ -340,17 +344,19 @@ static const AVFilterPad outputs_video[] = {
     },
 };
 
-const AVFilter ff_vf_setpts = {
-    .name            = "setpts",
-    .description     = NULL_IF_CONFIG_SMALL("Set PTS for the output video frame."),
+const FFFilter ff_vf_setpts = {
+    .p.name          = "setpts",
+    .p.description   = NULL_IF_CONFIG_SMALL("Set PTS for the output video frame."),
+    .p.flags         = AVFILTER_FLAG_METADATA_ONLY,
+
+    .p.priv_class    = &setpts_class,
+
     .init            = init,
     .activate        = activate,
     .uninit          = uninit,
     .process_command = process_command,
-    .flags           = AVFILTER_FLAG_METADATA_ONLY,
 
     .priv_size = sizeof(SetPTSContext),
-    .priv_class = &setpts_class,
 
     FILTER_INPUTS(avfilter_vf_setpts_inputs),
     FILTER_OUTPUTS(outputs_video),
@@ -373,16 +379,16 @@ static const AVFilterPad asetpts_inputs[] = {
     },
 };
 
-const AVFilter ff_af_asetpts = {
-    .name            = "asetpts",
-    .description     = NULL_IF_CONFIG_SMALL("Set PTS for the output audio frame."),
+const FFFilter ff_af_asetpts = {
+    .p.name          = "asetpts",
+    .p.description   = NULL_IF_CONFIG_SMALL("Set PTS for the output audio frame."),
+    .p.priv_class    = &asetpts_class,
+    .p.flags         = AVFILTER_FLAG_METADATA_ONLY,
     .init            = init,
     .activate        = activate,
     .uninit          = uninit,
     .process_command = process_command,
     .priv_size       = sizeof(SetPTSContext),
-    .priv_class      = &asetpts_class,
-    .flags           = AVFILTER_FLAG_METADATA_ONLY,
     FILTER_INPUTS(asetpts_inputs),
     FILTER_OUTPUTS(ff_audio_default_filterpad),
 };

@@ -697,7 +697,8 @@ static int mxf_decrypt_triplet(AVFormatContext *s, AVPacket *pkt, KLVPacket *klv
     if (size < 32 || size - 32 < orig_size || (int)orig_size != orig_size)
         return AVERROR_INVALIDDATA;
     avio_read(pb, ivec, 16);
-    avio_read(pb, tmpbuf, 16);
+    if (avio_read(pb, tmpbuf, 16) != 16)
+        return AVERROR_INVALIDDATA;
     if (mxf->aesc)
         av_aes_crypt(mxf->aesc, tmpbuf, tmpbuf, 1, ivec, 1);
     if (memcmp(tmpbuf, checkv, 16))
@@ -1928,6 +1929,8 @@ static int mxf_edit_unit_absolute_offset(MXFContext *mxf, MXFIndexTable *index_t
     // clamp to actual range of index
     index_end = av_sat_add64(last_segment->index_start_position, last_segment->index_duration);
     edit_unit = FFMAX(FFMIN(edit_unit, index_end), first_segment->index_start_position);
+    if (edit_unit < 0)
+        return AVERROR_PATCHWELCOME;
 
     // guess which table segment this edit unit is in
     // saturation is fine since it's just a guess

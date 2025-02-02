@@ -2040,9 +2040,10 @@ static void hls_prediction_unit(HEVCLocalContext *lc,
                                 int x0, int y0, int nPbW, int nPbH,
                                 int log2_cb_size, int partIdx, int idx)
 {
-#define POS(c_idx, x, y)                                                              \
+#define POS(c_idx, x, y)                                                          \
+    &s->cur_frame->f->data[c_idx] ?                                               \
     &s->cur_frame->f->data[c_idx][((y) >> sps->vshift[c_idx]) * linesize[c_idx] + \
-                           (((x) >> sps->hshift[c_idx]) << sps->pixel_shift)]
+                           (((x) >> sps->hshift[c_idx]) << sps->pixel_shift)] : NULL
     const HEVCContext *const s = lc->parent;
     int merge_idx = 0;
     struct MvField current_mv = {{{ 0 }}};
@@ -3095,14 +3096,11 @@ static int set_side_data(HEVCContext *s)
         return ret;
 
     if (s->sei.common.dynamic_hdr_vivid.info) {
-        AVBufferRef *info_ref = av_buffer_ref(s->sei.common.dynamic_hdr_vivid.info);
-        if (!info_ref)
+        if (!av_frame_side_data_add(&out->side_data, &out->nb_side_data,
+                                    AV_FRAME_DATA_DYNAMIC_HDR_VIVID,
+                                    &s->sei.common.dynamic_hdr_vivid.info,
+                                    AV_FRAME_SIDE_DATA_FLAG_NEW_REF))
             return AVERROR(ENOMEM);
-
-        if (!av_frame_new_side_data_from_buf(out, AV_FRAME_DATA_DYNAMIC_HDR_VIVID, info_ref)) {
-            av_buffer_unref(&info_ref);
-            return AVERROR(ENOMEM);
-        }
     }
 
     return 0;
