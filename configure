@@ -2490,6 +2490,7 @@ TYPES_LIST="
     kCVImageBufferColorPrimaries_ITU_R_2020
     kCVImageBufferTransferFunction_ITU_R_2020
     kCVImageBufferTransferFunction_SMPTE_ST_428_1
+    kVTQPModulationLevel_Default
     socklen_t
     struct_addrinfo
     struct_group_source_req
@@ -3358,6 +3359,7 @@ amrnb_mediacodec_decoder_select="amr_parser"
 amrwb_mediacodec_decoder_deps="mediacodec"
 amrwb_mediacodec_decoder_select="amr_parser"
 av1_amf_encoder_deps="amf"
+av1_amf_decoder_deps="amf"
 av1_cuvid_decoder_deps="cuvid CUVIDAV1PICPARAMS"
 av1_mediacodec_decoder_deps="mediacodec"
 av1_mediacodec_encoder_deps="mediacodec"
@@ -3373,6 +3375,7 @@ av1_vaapi_encoder_select="cbs_av1 vaapi_encode"
 h263_v4l2m2m_decoder_deps="v4l2_m2m h263_v4l2_m2m"
 h263_v4l2m2m_encoder_deps="v4l2_m2m h263_v4l2_m2m"
 h264_amf_encoder_deps="amf"
+h264_amf_decoder_deps="amf"
 h264_cuvid_decoder_deps="cuvid"
 h264_cuvid_decoder_select="h264_mp4toannexb_bsf"
 h264_mediacodec_decoder_deps="mediacodec"
@@ -3394,6 +3397,7 @@ h264_v4l2m2m_decoder_deps="v4l2_m2m h264_v4l2_m2m"
 h264_v4l2m2m_decoder_select="h264_mp4toannexb_bsf"
 h264_v4l2m2m_encoder_deps="v4l2_m2m h264_v4l2_m2m"
 hevc_amf_encoder_deps="amf"
+hevc_amf_decoder_deps="amf"
 hevc_cuvid_decoder_deps="cuvid"
 hevc_cuvid_decoder_select="hevc_mp4toannexb_bsf"
 hevc_d3d12va_encoder_select="cbs_h265 d3d12va_encode"
@@ -3469,6 +3473,7 @@ vvc_qsv_decoder_select="vvc_mp4toannexb_bsf qsvdec"
 aac_parser_select="adts_header mpeg4audio"
 av1_parser_select="cbs_av1"
 evc_parser_select="evcparse"
+ffv1_parser_select="rangecoder"
 ftr_parser_select="adts_header mpeg4audio"
 h264_parser_select="golomb h264dsp h264parse h264_sei"
 hevc_parser_select="hevcparse hevc_sei"
@@ -3963,6 +3968,8 @@ rubberband_filter_deps="librubberband"
 sab_filter_deps="gpl swscale"
 scale2ref_filter_deps="swscale"
 scale_filter_deps="swscale"
+sr_amf_filter_deps="amf"
+vpp_amf_filter_deps="amf"
 scale_qsv_filter_deps="libmfx"
 scale_qsv_filter_select="qsvvpp"
 scdet_filter_select="scene_sad"
@@ -6743,6 +6750,7 @@ enabled videotoolbox && {
     check_func_headers CoreVideo/CVImageBuffer.h kCVImageBufferColorPrimaries_ITU_R_2020 "-framework CoreVideo"
     check_func_headers CoreVideo/CVImageBuffer.h kCVImageBufferTransferFunction_ITU_R_2020 "-framework CoreVideo"
     check_func_headers CoreVideo/CVImageBuffer.h kCVImageBufferTransferFunction_SMPTE_ST_428_1 "-framework CoreVideo"
+    check_func_headers VideoToolbox/VTCompressionProperties.h kVTQPModulationLevel_Default "-framework CoreVideo"
 }
 
 enabled metal && test_cmd $metalcc -v || disable metal
