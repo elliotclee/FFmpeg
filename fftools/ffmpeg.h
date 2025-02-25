@@ -163,6 +163,7 @@ typedef struct OptionsContext {
     int loop;
     int rate_emu;
     float readrate;
+    float readrate_catchup;
     double readrate_initial_burst;
     int accurate_seek;
     int thread_queue_size;
@@ -316,7 +317,7 @@ typedef struct OutputFilterOptions {
     AVDictionary       *sws_opts;
     AVDictionary       *swr_opts;
 
-    const char         *nb_threads;
+    int64_t             nb_threads;
 
     // A combination of OFilterFlags.
     unsigned            flags;
