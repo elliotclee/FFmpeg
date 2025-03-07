@@ -64,6 +64,8 @@ OBJS = ac3_parser.o                                                     \
        vorbis_parser.o                                                  \
        xiph.o                                                           \
 
+SHLIBOBJS = timecode_internal.o                                         \
+
 # subsystems
 include $(SRC_PATH)/libavcodec/aac/Makefile
 include $(SRC_PATH)/libavcodec/hevc/Makefile
@@ -198,8 +200,6 @@ OBJS-$(CONFIG_AAC_ENCODER)             += aacenc.o aaccoder.o aacenctab.o    \
                                           aacpsy.o aactab.o      \
                                           aacenc_is.o \
                                           aacenc_tns.o \
-                                          aacenc_ltp.o \
-                                          aacenc_pred.o \
                                           psymodel.o kbdwin.o \
                                           mpeg4audio_sample_rates.o
 OBJS-$(CONFIG_AAC_MEDIACODEC_DECODER)  += mediacodecdec.o

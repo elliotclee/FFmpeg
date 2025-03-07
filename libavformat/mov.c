@@ -3539,7 +3539,7 @@ static int mov_read_stts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             av_log(c->fc, AV_LOG_WARNING, "Too large sample offset %u in stts entry %u with count %u in st:%d. Clipping to 1.\n",
                    sample_duration, i, sample_count, st->index);
             sc->stts_data[i].duration = 1;
-            corrected_dts += (delta_magnitude < 0 ? (int64_t)delta_magnitude : 1) * sample_count;
+            corrected_dts = av_sat_add64(corrected_dts, (delta_magnitude < 0 ? (int64_t)delta_magnitude : 1) * sample_count);
         } else {
             corrected_dts += sample_duration * (uint64_t)sample_count;
         }
@@ -3702,13 +3702,6 @@ static int mov_read_ctts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
         av_log(c->fc, AV_LOG_TRACE, "count=%d, duration=%d\n",
                 count, duration);
-
-        if (FFNABS(duration) < -(1<<28) && i+2<entries) {
-            av_log(c->fc, AV_LOG_WARNING, "CTTS invalid\n");
-            av_freep(&sc->ctts_data);
-            sc->ctts_count = 0;
-            return 0;
-        }
 
         if (i+2<entries)
             mov_update_dts_shift(sc, duration, c->fc);

@@ -538,8 +538,6 @@ void ff_vk_exec_discard_deps(FFVulkanContext *s, FFVkExecContext *e)
             e->frame_locked[j] = 0;
         }
         e->frame_update[j] = 0;
-        if (f->buf[0])
-            av_frame_free(&e->frame_deps[j]);
     }
     e->nb_frame_deps = 0;
 
@@ -700,6 +698,7 @@ int ff_vk_exec_add_dep_frame(FFVulkanContext *s, FFVkExecContext *e, AVFrame *f,
     uint8_t *frame_locked;
     uint8_t *frame_update;
     AVFrame **frame_deps;
+    AVBufferRef **buf_deps;
     VkImageLayout *layout_dst;
     uint32_t *queue_family_dst;
     VkAccessFlagBits *access_dst;
@@ -722,11 +721,20 @@ int ff_vk_exec_add_dep_frame(FFVulkanContext *s, FFVkExecContext *e, AVFrame *f,
     ARR_REALLOC(e, frame_update, &e->frame_update_alloc_size, e->nb_frame_deps);
     ARR_REALLOC(e, frame_deps,   &e->frame_deps_alloc_size,   e->nb_frame_deps);
 
-    e->frame_deps[e->nb_frame_deps] = f->buf[0] ? av_frame_clone(f) : f;
-    if (!e->frame_deps[e->nb_frame_deps]) {
-        ff_vk_exec_discard_deps(s, e);
-        return AVERROR(ENOMEM);
+    /* prepare_frame in hwcontext_vulkan.c uses the regular frame management
+     * code but has no frame yet, and it doesn't need to actually store a ref
+     * to the frame. */
+    if (f->buf[0]) {
+        ARR_REALLOC(e, buf_deps, &e->buf_deps_alloc_size, e->nb_buf_deps);
+        e->buf_deps[e->nb_buf_deps] = av_buffer_ref(f->buf[0]);
+        if (!e->buf_deps[e->nb_buf_deps]) {
+            ff_vk_exec_discard_deps(s, e);
+            return AVERROR(ENOMEM);
+        }
+        e->nb_buf_deps++;
     }
+
+    e->frame_deps[e->nb_frame_deps] = f;
 
     vkfc->lock_frame(hwfc, vkf);
     e->frame_locked[e->nb_frame_deps] = 1;
@@ -1430,6 +1438,7 @@ const char *ff_vk_shader_rep_fmt(enum AVPixelFormat pix_fmt,
         };
         return rep_tab[rep_fmt];
     };
+    case AV_PIX_FMT_GRAY32:
     case AV_PIX_FMT_GRAYF32:
     case AV_PIX_FMT_GBRPF32:
     case AV_PIX_FMT_GBRAPF32: {
@@ -1539,10 +1548,10 @@ static VkFormat map_fmt_to_rep(VkFormat fmt, enum FFVkShaderRepFormat rep_fmt)
         { REPS_FMT(VK_FORMAT_R16G16B16) },
         { REPS_FMT(VK_FORMAT_R16G16B16A16) },
         {
+            VK_FORMAT_R32_UINT,
             VK_FORMAT_R32_SFLOAT,
-            VK_FORMAT_R32_SFLOAT,
-            VK_FORMAT_UNDEFINED,
-            VK_FORMAT_UNDEFINED,
+            VK_FORMAT_R32_SINT,
+            VK_FORMAT_R32_UINT,
         },
         {
             VK_FORMAT_R32G32B32_SFLOAT,
@@ -2381,10 +2390,10 @@ static inline void update_set_pool_write(FFVulkanContext *s, FFVkExecContext *e,
     }
 }
 
-static int vk_set_descriptor_image(FFVulkanContext *s, FFVulkanShader *shd,
-                                   FFVkExecContext *e, int set, int bind, int offs,
-                                   VkImageView view, VkImageLayout layout,
-                                   VkSampler sampler)
+int ff_vk_set_descriptor_image(FFVulkanContext *s, FFVulkanShader *shd,
+                               FFVkExecContext *e, int set, int bind, int offs,
+                               VkImageView view, VkImageLayout layout,
+                               VkSampler sampler)
 {
     FFVulkanDescriptorSet *desc_set = &shd->desc_set[set];
 
@@ -2521,8 +2530,8 @@ void ff_vk_shader_update_img_array(FFVulkanContext *s, FFVkExecContext *e,
     const int nb_planes = av_pix_fmt_count_planes(hwfc->sw_format);
 
     for (int i = 0; i < nb_planes; i++)
-        vk_set_descriptor_image(s, shd, e, set, binding, i,
-                                views[i], layout, sampler);
+        ff_vk_set_descriptor_image(s, shd, e, set, binding, i,
+                                   views[i], layout, sampler);
 }
 
 void ff_vk_shader_update_push_const(FFVulkanContext *s, FFVkExecContext *e,
