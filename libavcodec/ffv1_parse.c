@@ -172,6 +172,8 @@ int ff_ffv1_read_extra_header(FFV1Context *f)
             f->crcref = 0x7a8c4079;
         if (f->combined_version >= 0x30003)
             f->intra = ff_ffv1_get_symbol(&c, state, 0);
+        if (f->combined_version >= 0x40004)
+            f->flt = ff_ffv1_get_symbol(&c, state, 0);
     }
 
     if (f->version > 2) {
@@ -286,15 +288,20 @@ int ff_ffv1_parse_header(FFV1Context *f, RangeCoder *c, uint8_t *state)
                 f->pix_fmt = AV_PIX_FMT_GRAY14;
             } else if (f->avctx->bits_per_raw_sample == 16) {
                 f->packed_at_lsb = 1;
-                f->pix_fmt = AV_PIX_FMT_GRAY16;
+                if (f->flt) {
+                    f->pix_fmt = AV_PIX_FMT_GRAYF16;
+                } else
+                    f->pix_fmt = AV_PIX_FMT_GRAY16;
             } else if (f->avctx->bits_per_raw_sample < 16) {
                 f->pix_fmt = AV_PIX_FMT_GRAY16;
             } else
                 return AVERROR(ENOSYS);
         } else if (f->transparency && !f->chroma_planes) {
-            if (f->avctx->bits_per_raw_sample <= 8)
+            if (f->avctx->bits_per_raw_sample <= 8 && !f->flt) {
                 f->pix_fmt = AV_PIX_FMT_YA8;
-            else
+            } else if (f->avctx->bits_per_raw_sample == 16 && f->flt) {
+                f->pix_fmt = AV_PIX_FMT_YAF16;
+            } else
                 return AVERROR(ENOSYS);
         } else if (f->avctx->bits_per_raw_sample<=8 && !f->transparency) {
             switch(16 * f->chroma_h_shift + f->chroma_v_shift) {
@@ -401,10 +408,16 @@ int ff_ffv1_parse_header(FFV1Context *f, RangeCoder *c, uint8_t *state)
         else if (f->avctx->bits_per_raw_sample == 14 && f->transparency)
             f->pix_fmt = AV_PIX_FMT_GBRAP14;
         else if (f->avctx->bits_per_raw_sample == 16 && !f->transparency) {
-            f->pix_fmt = AV_PIX_FMT_GBRP16;
+            if (f->flt) {
+                f->pix_fmt = AV_PIX_FMT_GBRPF16;
+            } else
+                f->pix_fmt = AV_PIX_FMT_GBRP16;
             f->use32bit = 1;
         } else if (f->avctx->bits_per_raw_sample == 16 && f->transparency) {
-            f->pix_fmt = AV_PIX_FMT_GBRAP16;
+            if (f->flt) {
+                f->pix_fmt = AV_PIX_FMT_GBRAPF16;
+            } else
+                f->pix_fmt = AV_PIX_FMT_GBRAP16;
             f->use32bit = 1;
         }
     } else {

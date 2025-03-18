@@ -42,6 +42,7 @@
 #include "libavutil/avstring.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
+#include "libavutil/float2half.h"
 #include "libavutil/half2float.h"
 
 #include "avcodec.h"
@@ -193,7 +194,10 @@ typedef struct EXRContext {
 
     uint8_t *offset_table;
 
+    uint16_t gamma_table[65536];
+
     Half2FloatTables h2f_tables;
+    Float2HalfTables f2h_tables;
 } EXRContext;
 
 static int zip_uncompress(const EXRContext *s, const uint8_t *src, int compressed_size,
@@ -1352,77 +1356,66 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
     data_yoffset = FFABS(FFMIN(0, line));
     data_window_offset = (data_yoffset * td->channel_line_size) + data_xoffset;
 
+    if (s->channel_offsets[3] >= 0)
+        channel_buffer[3] = src + (td->xsize * s->channel_offsets[3]) + data_window_offset;
     if (!s->is_luma) {
         channel_buffer[0] = src + (td->xsize * s->channel_offsets[0]) + data_window_offset;
         channel_buffer[1] = src + (td->xsize * s->channel_offsets[1]) + data_window_offset;
         channel_buffer[2] = src + (td->xsize * s->channel_offsets[2]) + data_window_offset;
         rgb_channel_count = 3;
-    } else { /* put y data in the first channel_buffer */
+    } else { /* put y data in the first channel_buffer and if needed, alpha in the second */
         channel_buffer[0] = src + (td->xsize * s->channel_offsets[1]) + data_window_offset;
+        if (!(s->desc->flags & AV_PIX_FMT_FLAG_PLANAR))
+            channel_buffer[1] = channel_buffer[3];
         rgb_channel_count = 1;
     }
-     if (s->channel_offsets[3] >= 0)
-        channel_buffer[3] = src + (td->xsize * s->channel_offsets[3]) + data_window_offset;
 
-    if (s->desc->flags & AV_PIX_FMT_FLAG_PLANAR || s->desc->nb_components == 1 ) {
-        /* todo: change this when a floating point pixel format with luma with alpha is implemented */
-        int channel_count = s->channel_offsets[3] >= 0 ? 4 : rgb_channel_count;
-        if (s->is_luma) {
-            channel_buffer[1] = channel_buffer[0];
-            channel_buffer[2] = channel_buffer[0];
-        }
-
-        for (c = 0; c < channel_count; c++) {
+    if (s->desc->flags & AV_PIX_FMT_FLAG_FLOAT) {
+        for (c = 0; c < s->desc->nb_components; c++) {
             int plane = s->desc->comp[c].plane;
-            ptr = p->data[plane] + window_ymin * p->linesize[plane] + (window_xmin * step);
+            ptr = p->data[plane] + window_ymin * p->linesize[plane] + (window_xmin * step) + s->desc->comp[c].offset;
 
             for (i = 0; i < ysize; i++, ptr += p->linesize[plane]) {
-                const uint8_t *src;
+                const uint8_t *src = channel_buffer[c];
+                uint8_t *ptr_x = ptr + window_xoffset * step;
+
+                // Zero out the start if xmin is not 0
+                if (s->desc->flags & AV_PIX_FMT_FLAG_PLANAR || !c)
+                    memset(ptr, 0, bxmin);
 
                 if (s->pixel_type == EXR_FLOAT ||
                     s->compression == EXR_DWAA ||
                     s->compression == EXR_DWAB) {
                     // 32-bit
-                    uint8_t *ptr_x = ptr;
-
-                    src = channel_buffer[c];
-
-                    // Zero out the start if xmin is not 0
-                    memset(ptr_x, 0, bxmin);
-                    ptr_x += 4 * window_xoffset;
-
-                    if (trc_func && c < 3) {
-                        for (int x = 0; x < xsize; x++, ptr_x += 4) {
+                    if (trc_func && (!c || (c < 3 && s->desc->flags & AV_PIX_FMT_FLAG_PLANAR))) {
+                        for (int x = 0; x < xsize; x++, ptr_x += step) {
                             float f = av_int2float(bytestream_get_le32(&src));
                             AV_WN32A(ptr_x, av_float2int(trc_func(f)));
                         }
                     } else if (one_gamma != 1.f) {
-                        for (int x = 0; x < xsize; x++, ptr_x += 4) {
+                        for (int x = 0; x < xsize; x++, ptr_x += step) {
                             float f = av_int2float(bytestream_get_le32(&src));
                             if (f > 0.0f && c < 3)  /* avoid negative values */
                                 f = powf(f, one_gamma);
                             AV_WN32A(ptr_x, av_float2int(f));
                         }
                     } else {
-                        for (int x = 0; x < xsize; x++, ptr_x += 4)
+                        for (int x = 0; x < xsize; x++, ptr_x += step)
                             AV_WN32A(ptr_x, bytestream_get_le32(&src));
                     }
-                    memset(ptr_x, 0, axmax);
                 } else if (s->pixel_type == EXR_HALF) {
-                    src = channel_buffer[c];
-
-                    // Zero out the start if xmin is not 0
-                    memset(ptr, 0, bxmin);
-
                     // 16-bit
-                    for (x = window_xoffset; x < xsize + window_xoffset; x++) {
-                        int v = bytestream_get_le16(&src);
-                        AV_WN16(ptr + x * sizeof(uint16_t), v);
+                    if (one_gamma != 1.f || (trc_func && (!c || (c < 3 && s->desc->flags & AV_PIX_FMT_FLAG_PLANAR)))) {
+                        for (int x = 0; x < xsize; x++, ptr_x += step)
+                            AV_WN16A(ptr_x, s->gamma_table[bytestream_get_le16(&src)]);
+                    } else {
+                        for (int x = 0; x < xsize; x++, ptr_x += step)
+                            AV_WN16A(ptr_x, bytestream_get_le16(&src));
                     }
-                    memset(ptr + x * sizeof(uint16_t), 0, axmax);
                 }
 
                 // Zero out the end if xmax+1 is not w
+                memset(ptr_x, 0, axmax);
                 channel_buffer[c] += td->channel_line_size;
             }
         }
@@ -2054,8 +2047,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
                 if (!s->is_luma) {
                     avctx->pix_fmt = AV_PIX_FMT_GBRAPF16;
                 } else {
-                    /* todo: change this when a floating point pixel format with luma with alpha is implemented */
-                    avctx->pix_fmt = AV_PIX_FMT_GBRAPF16;
+                    avctx->pix_fmt = AV_PIX_FMT_YAF16;
                 }
             } else {
                 if (!s->is_luma) {
@@ -2071,8 +2063,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
             if (!s->is_luma) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRAPF32;
             } else {
-                /* todo: change this when a floating point pixel format with luma with alpha is implemented */
-                avctx->pix_fmt = AV_PIX_FMT_GBRAPF32;
+                avctx->pix_fmt = AV_PIX_FMT_YAF32;
             }
         } else {
             if (!s->is_luma) {
@@ -2151,11 +2142,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
     if (!s->desc)
         return AVERROR_INVALIDDATA;
 
-    if (s->desc->flags & AV_PIX_FMT_FLAG_PLANAR) {
-        planes           = s->desc->nb_components;
-    } else {
-        planes           = 1;
-    }
+    planes           = av_pix_fmt_count_planes(avctx->pix_fmt);
     out_line_size    = avctx->width * s->desc->comp[0].step;
 
     if (s->is_tile) {
@@ -2234,8 +2221,13 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
 static av_cold int decode_init(AVCodecContext *avctx)
 {
     EXRContext *s = avctx->priv_data;
+    uint32_t i;
+    union av_intfloat32 t;
+    float one_gamma = 1.0f / s->gamma;
+    av_csp_trc_function trc_func = NULL;
 
     ff_init_half2float_tables(&s->h2f_tables);
+    ff_init_float2half_tables(&s->f2h_tables);
 
     s->avctx              = avctx;
 
@@ -2244,6 +2236,26 @@ static av_cold int decode_init(AVCodecContext *avctx)
 #if HAVE_BIGENDIAN
     ff_bswapdsp_init(&s->bbdsp);
 #endif
+
+    trc_func = av_csp_trc_func_from_id(s->apply_trc_type);
+    if (trc_func) {
+        for (i = 0; i < 65536; ++i) {
+            t.i = half2float(i, &s->h2f_tables);
+            t.f = trc_func(t.f);
+            s->gamma_table[i] = float2half(av_float2int(t.f), &s->f2h_tables);
+        }
+    } else if (one_gamma != 1.0f) {
+        for (i = 0; i < 65536; ++i) {
+            t.i = half2float(i, &s->h2f_tables);
+            /* If negative value we reuse half value */
+            if (t.f <= 0.0f) {
+                s->gamma_table[i] = i;
+            } else {
+                t.f = powf(t.f, one_gamma);
+                s->gamma_table[i] = float2half(t.i, &s->f2h_tables);
+            }
+        }
+    }
 
     // allocate thread data, used for non EXR_RAW compression types
     s->thread_data = av_calloc(avctx->thread_count, sizeof(*s->thread_data));

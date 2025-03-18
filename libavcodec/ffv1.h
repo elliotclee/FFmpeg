@@ -84,6 +84,7 @@ typedef struct FFV1SliceContext {
     int slice_coding_mode;
     int slice_rct_by_coef;
     int slice_rct_ry_coef;
+    int remap;
 
     // RefStruct reference, array of MAX_PLANES elements
     PlaneContext *plane;
@@ -105,6 +106,7 @@ typedef struct FFV1SliceContext {
             uint64_t (*rc_stat2[MAX_QUANT_TABLES])[32][2];
         };
     };
+    uint16_t   fltmap[4][65536];
 } FFV1SliceContext;
 
 typedef struct FFV1Context {
@@ -123,8 +125,10 @@ typedef struct FFV1Context {
     int64_t picture_number;
     int key_frame;
     ProgressFrame picture, last_picture;
+    void *hwaccel_picture_private, *hwaccel_last_picture_private;
     uint32_t crcref;
     enum AVPixelFormat pix_fmt;
+    enum AVPixelFormat configured_pix_fmt;
 
     const AVFrame *cur_enc_frame;
     int plane_count;
@@ -134,6 +138,9 @@ typedef struct FFV1Context {
     uint8_t state_transition[256];
     uint8_t (*initial_states[MAX_QUANT_TABLES])[32];
     int colorspace;
+    int flt;
+    int remap_mode;
+
 
     int use32bit;
 

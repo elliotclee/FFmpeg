@@ -2039,7 +2039,7 @@ redo_frame:
 
     update_last_header_values(s);
 
-    ff_snow_release_buffer(avctx);
+    av_frame_unref(s->last_picture[s->max_ref_frames - 1]);
 
     s->current_picture->pict_type = pic->pict_type;
     s->current_picture->quality = pic->quality;
@@ -2141,11 +2141,8 @@ const FFCodec ff_snow_encoder = {
     .init           = encode_init,
     FF_CODEC_ENCODE_CB(encode_frame),
     .close          = encode_end,
-    .p.pix_fmts     = (const enum AVPixelFormat[]){
-        AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV444P,
-        AV_PIX_FMT_GRAY8,
-        AV_PIX_FMT_NONE
-    },
+    CODEC_PIXFMTS(AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV444P,
+                  AV_PIX_FMT_GRAY8),
     .color_ranges   = AVCOL_RANGE_MPEG,
     .p.priv_class   = &snowenc_class,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
