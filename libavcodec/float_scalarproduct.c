@@ -1,6 +1,4 @@
 /*
- * Copyright (c) 2002 The FFmpeg Project
- *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -18,14 +16,4 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_WMV2ENC_H
-#define AVCODEC_WMV2ENC_H
-
-#include "mpegvideo.h"
-
-int ff_wmv2_encode_picture_header(MpegEncContext * s);
-void ff_wmv2_encode_mb(MpegEncContext * s, int16_t block[6][64],
-                       int motion_x, int motion_y);
-
-
-#endif
+#include "libavutil/float_scalarproduct.c"

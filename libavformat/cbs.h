@@ -16,22 +16,20 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVUTIL_DICT_INTERNAL_H
-#define AVUTIL_DICT_INTERNAL_H
+#ifndef AVFORMAT_CBS_H
+#define AVFORMAT_CBS_H
 
-#include <stdint.h>
+#define CBS_PREFIX lavf_cbs
+#define CBS_WRITE 0
+#define CBS_TRACE 0
+#define CBS_H264 0
+#define CBS_H265 0
+#define CBS_H266 0
+#define CBS_JPEG 0
+#define CBS_MPEG2 0
+#define CBS_VP8 0
+#define CBS_VP9 0
 
-#include "dict.h"
+#include "libavcodec/cbs.h"
 
-/**
- * Set a dictionary value to an ISO-8601 compliant timestamp string.
- *
- * @param dict pointer to a pointer to a dictionary struct. If *dict is NULL
- *             a dictionary struct is allocated and put in *dict.
- * @param key metadata key
- * @param timestamp unix timestamp in microseconds
- * @return <0 on error
- */
-int avpriv_dict_set_timestamp(AVDictionary **dict, const char *key, int64_t timestamp);
-
-#endif /* AVUTIL_DICT_INTERNAL_H */
+#endif /* AVFORMAT_CBS_H */

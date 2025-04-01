@@ -5,7 +5,6 @@ HEADERS = ac3_parser.h                                                  \
           adts_parser.h                                                 \
           avcodec.h                                                     \
           avdct.h                                                       \
-          avfft.h                                                       \
           bsf.h                                                         \
           codec.h                                                       \
           codec_desc.h                                                  \
@@ -31,7 +30,6 @@ OBJS = ac3_parser.o                                                     \
        allcodecs.o                                                      \
        avcodec.o                                                        \
        avdct.o                                                          \
-       avfft.o                                                          \
        packet.o                                                         \
        bitstream.o                                                      \
        bitstream_filters.o                                              \
@@ -63,7 +61,8 @@ OBJS = ac3_parser.o                                                     \
        vorbis_parser.o                                                  \
        xiph.o                                                           \
 
-SHLIBOBJS = timecode_internal.o                                         \
+SHLIBOBJS = float_scalarproduct.o                                       \
+            timecode_internal.o                                         \
 
 # subsystems
 include $(SRC_PATH)/libavcodec/aac/Makefile
@@ -147,6 +146,7 @@ OBJS-$(CONFIG_MPEGAUDIOHEADER)         += mpegaudiodecheader.o mpegaudiotabs.o
 OBJS-$(CONFIG_MPEG4AUDIO)              += mpeg4audio.o mpeg4audio_sample_rates.o
 OBJS-$(CONFIG_MPEGVIDEO)               += mpegvideo.o rl.o \
                                           mpegvideo_motion.o \
+                                          mpegvideo_unquantize.o \
                                           mpegvideodata.o mpegpicture.o  \
                                           to_upper4.o
 OBJS-$(CONFIG_MPEGVIDEODEC)            += mpegvideo_dec.o mpegutils.o

@@ -167,7 +167,7 @@ int ff_videotoolbox_alloc_frame(AVCodecContext *avctx, AVFrame *frame)
     }
     frame->buf[0] = buf;
 
-    fdd = (FrameDecodeData*)frame->private_ref->data;
+    fdd = frame->private_ref;
     fdd->post_process = videotoolbox_postproc_frame;
 
     frame->width  = avctx->width;
@@ -728,8 +728,13 @@ static void videotoolbox_decoder_callback(void *opaque,
     }
 
     if (!image_buffer) {
+        // kVTVideoDecoderReferenceMissingErr, defined since the macOS 12 SDKs
+        if (status != -17694)
+            vtctx->reconfig_needed = true;
+
         av_log(vtctx->logctx, status ? AV_LOG_WARNING : AV_LOG_DEBUG,
-               "vt decoder cb: output image buffer is null: %i\n", status);
+               "vt decoder cb: output image buffer is null: %i, reconfig %d\n",
+               status, vtctx->reconfig_needed);
         return;
     }
 
@@ -1066,10 +1071,8 @@ int ff_videotoolbox_common_end_frame(AVCodecContext *avctx, AVFrame *frame)
         return AVERROR_UNKNOWN;
     }
 
-    if (!vtctx->frame) {
-        vtctx->reconfig_needed = true;
+    if (!vtctx->frame)
         return AVERROR_UNKNOWN;
-    }
 
     return videotoolbox_buffer_create(avctx, frame);
 }
