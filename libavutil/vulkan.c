@@ -280,15 +280,19 @@ void ff_vk_exec_pool_free(FFVulkanContext *s, FFVkExecPool *pool)
         av_freep(&sd->desc_sets);
     }
 
-    if (pool->cmd_bufs)
-        vk->FreeCommandBuffers(s->hwctx->act_dev, pool->cmd_buf_pool,
-                               pool->pool_size, pool->cmd_bufs);
-    if (pool->cmd_buf_pool)
-        vk->DestroyCommandPool(s->hwctx->act_dev, pool->cmd_buf_pool, s->hwctx->alloc);
+    for (int i = 0; i < pool->pool_size; i++) {
+        if (pool->cmd_buf_pools[i])
+            vk->FreeCommandBuffers(s->hwctx->act_dev, pool->cmd_buf_pools[i],
+                                   1, &pool->cmd_bufs[i]);
+
+        if (pool->cmd_buf_pools[i])
+            vk->DestroyCommandPool(s->hwctx->act_dev, pool->cmd_buf_pools[i], s->hwctx->alloc);
+    }
     if (pool->query_pool)
         vk->DestroyQueryPool(s->hwctx->act_dev, pool->query_pool, s->hwctx->alloc);
 
     av_free(pool->query_data);
+    av_free(pool->cmd_buf_pools);
     av_free(pool->cmd_bufs);
     av_free(pool->contexts);
 }
@@ -316,19 +320,10 @@ int ff_vk_exec_pool_init(FFVulkanContext *s, AVVulkanDeviceQueueFamily *qf,
             return AVERROR(EINVAL);
     }
 
-    /* Create command pool */
-    cqueue_create = (VkCommandPoolCreateInfo) {
-        .sType              = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags              = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
-                              VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex   = qf->idx,
-    };
-    ret = vk->CreateCommandPool(s->hwctx->act_dev, &cqueue_create,
-                                s->hwctx->alloc, &pool->cmd_buf_pool);
-    if (ret != VK_SUCCESS) {
-        av_log(s, AV_LOG_ERROR, "Command pool creation failure: %s\n",
-               ff_vk_ret2str(ret));
-        err = AVERROR_EXTERNAL;
+    /* Allocate space for command buffer pools */
+    pool->cmd_buf_pools = av_malloc(nb_contexts*sizeof(*pool->cmd_buf_pools));
+    if (!pool->cmd_buf_pools) {
+        err = AVERROR(ENOMEM);
         goto fail;
     }
 
@@ -339,20 +334,39 @@ int ff_vk_exec_pool_init(FFVulkanContext *s, AVVulkanDeviceQueueFamily *qf,
         goto fail;
     }
 
-    /* Allocate command buffer */
-    cbuf_create = (VkCommandBufferAllocateInfo) {
-        .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandPool        = pool->cmd_buf_pool,
-        .commandBufferCount = nb_contexts,
-    };
-    ret = vk->AllocateCommandBuffers(s->hwctx->act_dev, &cbuf_create,
-                                     pool->cmd_bufs);
-    if (ret != VK_SUCCESS) {
-        av_log(s, AV_LOG_ERROR, "Command buffer alloc failure: %s\n",
-               ff_vk_ret2str(ret));
-        err = AVERROR_EXTERNAL;
-        goto fail;
+    for (int i = 0; i < nb_contexts; i++) {
+        /* Create command pool */
+        cqueue_create = (VkCommandPoolCreateInfo) {
+            .sType              = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags              = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
+                                  VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+            .queueFamilyIndex   = qf->idx,
+        };
+
+        ret = vk->CreateCommandPool(s->hwctx->act_dev, &cqueue_create,
+                                    s->hwctx->alloc, &pool->cmd_buf_pools[i]);
+        if (ret != VK_SUCCESS) {
+            av_log(s, AV_LOG_ERROR, "Command pool creation failure: %s\n",
+                   ff_vk_ret2str(ret));
+            err = AVERROR_EXTERNAL;
+            goto fail;
+        }
+
+        /* Allocate command buffer */
+        cbuf_create = (VkCommandBufferAllocateInfo) {
+            .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandPool        = pool->cmd_buf_pools[i],
+            .commandBufferCount = 1,
+        };
+        ret = vk->AllocateCommandBuffers(s->hwctx->act_dev, &cbuf_create,
+                                         &pool->cmd_bufs[i]);
+        if (ret != VK_SUCCESS) {
+            av_log(s, AV_LOG_ERROR, "Command buffer alloc failure: %s\n",
+                   ff_vk_ret2str(ret));
+            err = AVERROR_EXTERNAL;
+            goto fail;
+        }
     }
 
     /* Query pool */
@@ -2046,6 +2060,12 @@ int ff_vk_shader_init(FFVulkanContext *s, FFVulkanShader *shd, const char *name,
     GLSLC(0, #extension GL_EXT_scalar_block_layout : require                  );
     GLSLC(0, #extension GL_EXT_shader_explicit_arithmetic_types : require     );
     GLSLC(0, #extension GL_EXT_control_flow_attributes : require              );
+    if (s->extensions & FF_VK_EXT_EXPECT_ASSUME) {
+        GLSLC(0, #extension GL_EXT_expect_assume : require                    );
+    } else {
+        GLSLC(0, #define assumeEXT(x) (x)                                     );
+        GLSLC(0, #define expectEXT(x, c) (x)                                  );
+    }
     if ((s->extensions & FF_VK_EXT_DEBUG_UTILS) &&
         (s->extensions & FF_VK_EXT_RELAXED_EXTENDED_INSTR)) {
         GLSLC(0, #extension GL_EXT_debug_printf : require                     );
@@ -2133,7 +2153,7 @@ static int create_shader_module(FFVulkanContext *s, FFVulkanShader *shd,
     ret = vk->CreateShaderModule(s->hwctx->act_dev, &shader_module_info,
                                  s->hwctx->alloc, mod);
     if (ret != VK_SUCCESS) {
-        av_log(s, AV_LOG_VERBOSE, "Error creating shader module: %s\n",
+        av_log(s, AV_LOG_ERROR, "Error creating shader module: %s\n",
                ff_vk_ret2str(ret));
         return AVERROR_EXTERNAL;
     }
