@@ -46,3 +46,4 @@
 /build/
 /libavcodec/vulkan/*.c
 /libavfilter/vulkan/*.c
+/.*/

@@ -1,6 +1,4 @@
 /*
- * Version functions.
- *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -18,28 +16,24 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <assert.h>
+#include "avformat.h"
+#include "mux.h"
 
-#include "config.h"
-#include "postprocess.h"
-#include "version.h"
-
-#include "libavutil/ffversion.h"
-const char postproc_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
-
-unsigned postproc_version(void)
+static int apv_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
-    static_assert(LIBPOSTPROC_VERSION_MICRO >= 100, "micro version starts at 100");
-    return LIBPOSTPROC_VERSION_INT;
+    avio_wb32(s->pb, pkt->size);
+    avio_write(s->pb, pkt->data, pkt->size);
+    return 0;
 }
 
-const char *postproc_configuration(void)
-{
-    return FFMPEG_CONFIGURATION;
-}
-
-const char *postproc_license(void)
-{
-#define LICENSE_PREFIX "libpostproc license: "
-    return &LICENSE_PREFIX FFMPEG_LICENSE[sizeof(LICENSE_PREFIX) - 1];
-}
+const FFOutputFormat ff_apv_muxer = {
+    .p.name           = "apv",
+    .p.long_name      = NULL_IF_CONFIG_SMALL("APV raw bitstream"),
+    .p.extensions     = "apv",
+    .p.audio_codec    = AV_CODEC_ID_NONE,
+    .p.video_codec    = AV_CODEC_ID_APV,
+    .p.subtitle_codec = AV_CODEC_ID_NONE,
+    .p.flags          = AVFMT_NOTIMESTAMPS,
+    .flags_internal   = FF_OFMT_FLAG_MAX_ONE_OF_EACH | FF_OFMT_FLAG_ONLY_DEFAULT_CODECS,
+    .write_packet     = apv_write_packet,
+};
