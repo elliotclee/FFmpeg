@@ -2533,6 +2533,7 @@ HAVE_LIST="
     $TOOLCHAIN_FEATURES
     $TYPES_LIST
     gzip
+    ioctl_posix
     libdrm_getfb2
     makeinfo
     makeinfo_html
@@ -2545,7 +2546,6 @@ HAVE_LIST="
     opencl_videotoolbox
     perl
     pod2man
-    posix_ioctl
     texi2html
     xmllint
     zlib_gzip
@@ -2573,6 +2573,7 @@ CONFIG_EXTRA="
     cbs_mpeg2
     cbs_vp8
     cbs_vp9
+    celp_math
     d3d12va_encode
     deflate_wrapper
     dirac_parse
@@ -2629,6 +2630,7 @@ CONFIG_EXTRA="
     mpegvideo
     mpegvideodec
     mpegvideoenc
+    mpegvideoencdsp
     msmpeg4dec
     msmpeg4enc
     mss34dsp
@@ -2868,6 +2870,7 @@ w32threads_deps="atomics_native"
 threads_if_any="$THREADS_LIST"
 
 # subsystems
+cbs_apv_select="cbs"
 cbs_av1_select="cbs"
 cbs_h264_select="cbs"
 cbs_h265_select="cbs"
@@ -2906,7 +2909,7 @@ mpeg_er_select="error_resilience"
 mpegaudio_select="mpegaudiodsp mpegaudioheader"
 mpegvideo_select="blockdsp hpeldsp idctdsp videodsp"
 mpegvideodec_select="h264chroma mpegvideo mpeg_er"
-mpegvideoenc_select="aandcttables fdctdsp me_cmp mpegvideo pixblockdsp"
+mpegvideoenc_select="aandcttables fdctdsp me_cmp mpegvideo mpegvideoencdsp pixblockdsp"
 msmpeg4dec_select="h263_decoder"
 msmpeg4enc_select="h263_encoder"
 vc1dsp_select="h264chroma qpeldsp startcode"
@@ -2922,15 +2925,15 @@ ac3_decoder_select="ac3_parser ac3dsp bswapdsp fmtconvert"
 ac3_fixed_decoder_select="ac3_parser ac3dsp bswapdsp"
 ac3_encoder_select="ac3dsp audiodsp me_cmp"
 ac3_fixed_encoder_select="ac3dsp audiodsp me_cmp"
-acelp_kelvin_decoder_select="audiodsp"
+acelp_kelvin_decoder_select="audiodsp celp_math"
 adpcm_g722_decoder_select="g722dsp"
 adpcm_g722_encoder_select="g722dsp"
 agm_decoder_select="idctdsp"
 aic_decoder_select="golomb idctdsp"
 alac_encoder_select="lpc"
 als_decoder_select="bswapdsp mpeg4audio"
-amrnb_decoder_select="lsp"
-amrwb_decoder_select="lsp"
+amrnb_decoder_select="lsp celp_math"
+amrwb_decoder_select="lsp celp_math"
 amv_decoder_select="sp5x_decoder exif"
 amv_encoder_select="jpegtables mpegvideoenc"
 ape_decoder_select="bswapdsp llauddsp"
@@ -2958,7 +2961,7 @@ cook_decoder_select="audiodsp sinewin"
 cri_decoder_select="mjpeg_decoder"
 cscd_decoder_suggest="zlib"
 dds_decoder_select="texturedsp"
-dirac_decoder_select="dirac_parse dwt golomb mpegvideoenc qpeldsp videodsp"
+dirac_decoder_select="dirac_parse dwt golomb mpegvideoencdsp qpeldsp videodsp"
 dnxhd_decoder_select="blockdsp idctdsp"
 dnxhd_encoder_select="blockdsp fdctdsp idctdsp mpegvideoenc pixblockdsp videodsp"
 dvvideo_decoder_select="dvprofile idctdsp"
@@ -2992,7 +2995,9 @@ fraps_decoder_select="bswapdsp huffman"
 ftr_decoder_select="adts_header"
 g2m_decoder_deps="zlib"
 g2m_decoder_select="blockdsp idctdsp jpegtables"
-g729_decoder_select="audiodsp"
+g723_1_decoder_select="celp_math"
+g723_1_encoder_select="celp_math"
+g729_decoder_select="audiodsp celp_math"
 h261_decoder_select="mpegvideodec"
 h261_encoder_select="mpegvideoenc"
 h263_decoder_select="h263_parser h263dsp mpegvideodec qpeldsp"
@@ -3100,10 +3105,10 @@ rv40_decoder_select="golomb h264pred h264qpel mpegvideodec rv34dsp"
 rv60_decoder_select="videodsp golomb"
 screenpresso_decoder_deps="zlib"
 shorten_decoder_select="bswapdsp"
-sipr_decoder_select="lsp"
+sipr_decoder_select="lsp celp_math"
 smvjpeg_decoder_select="mjpeg_decoder"
 snow_decoder_select="dwt h264qpel rangecoder videodsp"
-snow_encoder_select="dwt h264qpel hpeldsp me_cmp mpegvideoenc rangecoder videodsp"
+snow_encoder_select="dwt h264qpel hpeldsp me_cmp mpegvideoencdsp rangecoder videodsp"
 sonic_decoder_select="golomb rangecoder"
 sonic_encoder_select="golomb rangecoder"
 sonic_ls_encoder_select="golomb rangecoder"
@@ -3112,7 +3117,7 @@ speedhq_decoder_select="blockdsp idctdsp"
 speedhq_encoder_select="mpegvideoenc"
 srgc_decoder_select="inflate_wrapper"
 svq1_decoder_select="hpeldsp"
-svq1_encoder_select="hpeldsp me_cmp mpegvideoenc"
+svq1_encoder_select="hpeldsp me_cmp mpegvideoencdsp"
 svq3_decoder_select="golomb h264dsp h264parse h264pred hpeldsp tpeldsp videodsp"
 svq3_decoder_suggest="zlib"
 tak_decoder_select="audiodsp"
@@ -3407,7 +3412,7 @@ h264_qsv_encoder_select="atsc_a53 qsvenc"
 h264_rkmpp_decoder_deps="rkmpp"
 h264_rkmpp_decoder_select="h264_mp4toannexb_bsf"
 h264_vaapi_encoder_select="atsc_a53 cbs_h264 vaapi_encode"
-h264_vulkan_encoder_select="cbs_h264 vulkan_encode"
+h264_vulkan_encoder_select="atsc_a53 cbs_h264 vulkan_encode"
 h264_v4l2m2m_decoder_deps="v4l2_m2m h264_v4l2_m2m"
 h264_v4l2m2m_decoder_select="h264_mp4toannexb_bsf"
 h264_v4l2m2m_encoder_deps="v4l2_m2m h264_v4l2_m2m"
@@ -5124,10 +5129,12 @@ probe_cc(){
         _flags_filter=msvc_flags
         _ld_lib='lib%.a'
         _ld_path='-libpath:'
-    elif $_cc -nologo- 2>&1 | grep -q Microsoft || { $_cc -v 2>&1 | grep -q clang && $_cc -? > /dev/null 2>&1; }; then
+    elif $_cc -nologo- 2>&1 | grep -q ^Microsoft || { $_cc -v 2>&1 | grep -q clang && $_cc -? > /dev/null 2>&1; }; then
         _type=msvc
-        if $_cc -nologo- 2>&1 | grep -q Microsoft; then
-            _ident=$($_cc 2>&1 | head -n1 | tr -d '\r')
+        if $_cc -nologo- 2>&1 | grep -q ^Microsoft; then
+            # Depending on the tool (cl.exe or link.exe), the version number
+            # is printed on the first line of stderr or stdout
+            _ident=$($_cc 2>&1 | grep ^Microsoft | head -n1 | tr -d '\r')
         else
             _ident=$($_cc --version 2>/dev/null | head -n1 | tr -d '\r')
         fi
@@ -5236,7 +5243,7 @@ if [ -z "$CC_DEPFLAGS" ] && [ "$dep_cc" != "$cc" ]; then
     DEPCCFLAGS=$_flags
 fi
 
-if $ar 2>&1 | grep -q Microsoft; then
+if $ar 2>&1 | grep -q ^Microsoft; then
     arflags="-nologo"
     ar_o='-out:$@'
 elif $ar 2>&1 | grep -q "\[D\] "; then
@@ -6949,7 +6956,7 @@ enabled jni               && { [ $target_os = "android" ] && check_headers jni.h
 enabled ladspa            && require_headers "ladspa.h dlfcn.h"
 enabled lcms2             && require_pkg_config lcms2 "lcms2 >= 2.13" lcms2.h cmsCreateContext
 enabled libaom            && require_pkg_config libaom "aom >= 2.0.0" aom/aom_codec.h aom_codec_version
-enabled liboapv           && require_pkg_config liboapv "oapv >= 0.1.13" "oapv/oapv.h" oapve_encode
+enabled liboapv           && require_pkg_config liboapv "oapv >= 0.1.13.1" "oapv/oapv.h" oapve_encode
 enabled libaribb24        && { check_pkg_config libaribb24 "aribb24 > 1.0.3" "aribb24/aribb24.h" arib_instance_new ||
                                { enabled gpl && require_pkg_config libaribb24 aribb24 "aribb24/aribb24.h" arib_instance_new; } ||
                                die "ERROR: libaribb24 requires version higher than 1.0.3 or --enable-gpl."; }
@@ -7275,7 +7282,7 @@ xmllint --version  > /dev/null 2>&1 && enable xmllint   || disable xmllint
 check_headers linux/fb.h
 check_headers linux/videodev2.h
 test_code cc linux/videodev2.h "struct v4l2_frmsizeenum vfse; vfse.discrete.width = 0;" && enable_sanitized struct_v4l2_frmivalenum_discrete
-test_code cc sys/ioctl.h "int ioctl(int, int, ...)" && enable posix_ioctl
+test_code cc sys/ioctl.h "int ioctl(int, int, ...)" && enable ioctl_posix
 
 # check V4L2 codecs available in the API
 if enabled v4l2_m2m; then

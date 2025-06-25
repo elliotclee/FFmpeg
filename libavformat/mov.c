@@ -1277,6 +1277,11 @@ static int mov_read_clap(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         err = AVERROR_INVALIDDATA;
         goto fail;
     }
+    if ((av_cmp_q((AVRational) { width,  1 }, aperture_width)  < 0) ||
+        (av_cmp_q((AVRational) { height, 1 }, aperture_height) < 0)) {
+        err = AVERROR_INVALIDDATA;
+        goto fail;
+    }
     av_log(c->fc, AV_LOG_TRACE, "clap: apertureWidth %d/%d, apertureHeight %d/%d "
                                 "horizOff %d/%d vertOff %d/%d\n",
            aperture_width.num, aperture_width.den, aperture_height.num, aperture_height.den,
@@ -5430,18 +5435,18 @@ static int heif_add_stream(MOVContext *c, HEIFItem *item)
     sc->stsc_data[0].first = 1;
     sc->stsc_data[0].count = 1;
     sc->stsc_data[0].id = 1;
-    sc->chunk_count = 1;
     sc->chunk_offsets = av_malloc_array(1, sizeof(*sc->chunk_offsets));
     if (!sc->chunk_offsets)
         return AVERROR(ENOMEM);
-    sc->sample_count = 1;
+    sc->chunk_count = 1;
     sc->sample_sizes = av_malloc_array(1, sizeof(*sc->sample_sizes));
     if (!sc->sample_sizes)
         return AVERROR(ENOMEM);
-    sc->stts_count = 1;
+    sc->sample_count = 1;
     sc->stts_data = av_malloc_array(1, sizeof(*sc->stts_data));
     if (!sc->stts_data)
         return AVERROR(ENOMEM);
+    sc->stts_count = 1;
     sc->stts_data[0].count = 1;
     // Not used for still images. But needed by mov_build_index.
     sc->stts_data[0].duration = 0;
