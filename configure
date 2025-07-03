@@ -6830,7 +6830,7 @@ if [ -z "$nvccflags" ]; then
     nvccflags=$nvccflags_default
 fi
 
-nvccflags="$nvccflags -std=c++11"
+nvccflags="$nvccflags -std=c++20"
 
 if enabled x86_64 || enabled ppc64 || enabled aarch64; then
     nvccflags="$nvccflags -m64"
@@ -7044,7 +7044,8 @@ enabled libmodplug        && require_pkg_config libmodplug libmodplug libmodplug
 enabled libmp3lame        && require "libmp3lame >= 3.98.3" lame/lame.h lame_set_VBR_quality -lmp3lame $libm_extralibs
 enabled libmysofa         && { check_pkg_config libmysofa libmysofa mysofa.h mysofa_neighborhood_init_withstepdefine ||
                                require libmysofa mysofa.h mysofa_neighborhood_init_withstepdefine -lmysofa $zlib_extralibs; }
-enabled libnpp            && { check_lib libnpp npp.h nppGetLibVersion -lnppig -lnppicc -lnppc -lnppidei -lnppif ||
+enabled libnpp            && { for checkmenow in nppig nppicc nppc nppidei nppif; do check_pkg_config ${checkmenow} ${checkmenow}-12.9 "" "" || die "ERROR: $checkmenow-12.9 missing for libnpp"; done ||
+                               check_lib libnpp npp.h nppGetLibVersion -lnppig -lnppicc -lnppc -lnppidei -lnppif ||
                                check_lib libnpp npp.h nppGetLibVersion -lnppi -lnppif -lnppc -lnppidei ||
                                die "ERROR: libnpp not found"; }
 enabled libopencore_amrnb && require libopencore_amrnb opencore-amrnb/interf_dec.h Decoder_Interface_init -lopencore-amrnb
