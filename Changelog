@@ -22,7 +22,8 @@ version <next>:
 - G.728 decoder
 - pad_cuda filter
 - Sanyo LD-ADPCM decoder
-- APV in MP4/ISOBMFF demuxing
+- APV in MP4/ISOBMFF muxing and demuxing
+- OpenHarmony hardware decoder/encoder
 
 
 version 7.1:

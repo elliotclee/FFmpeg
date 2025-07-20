@@ -1,6 +1,8 @@
 /*
  * This file is part of FFmpeg.
  *
+ * Copyright (c) 2025 Zhao Zhili <quinkblack@foxmail.com>
+ *
  * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
@@ -16,20 +18,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVFORMAT_CBS_H
-#define AVFORMAT_CBS_H
+#ifndef AVUTIL_HWCONTEXT_OH_H
+#define AVUTIL_HWCONTEXT_OH_H
 
-#define CBS_PREFIX lavf_cbs
-#define CBS_WRITE 0
-#define CBS_TRACE 0
-#define CBS_H264 0
-#define CBS_H265 0
-#define CBS_H266 0
-#define CBS_JPEG 0
-#define CBS_MPEG2 0
-#define CBS_VP8 0
-#define CBS_VP9 0
+/**
+ * OpenHarmony codec device
+ */
+typedef struct AVOHCodecDeviceContext {
+    /**
+     * Pointer to OHNativeWindow
+     */
+    void *native_window;
+} AVOHCodecDeviceContext;
 
-#include "libavcodec/cbs.h"
-
-#endif /* AVFORMAT_CBS_H */
+#endif /* AVUTIL_HWCONTEXT_OH_H */

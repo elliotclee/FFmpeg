@@ -322,6 +322,7 @@ External library support:
   --enable-mediafoundation enable encoding via MediaFoundation [auto]
   --disable-metal          disable Apple Metal framework [autodetect]
   --enable-libmysofa       enable libmysofa, needed for sofalizer filter [no]
+  --enable-ohcodec         enable OpenHarmony Codec support [no]
   --enable-openal          enable OpenAL 1.1 capture support [no]
   --enable-opencl          enable OpenCL processing [no]
   --enable-opengl          enable OpenGL rendering [no]
@@ -380,10 +381,10 @@ Toolchain options:
   --target-samples=DIR     path to samples directory on target
   --tempprefix=PATH        force fixed dir/prefix instead of mktemp for checks
   --toolchain=NAME         set tool defaults according to NAME
-                           (gcc-asan, clang-asan, gcc-msan, clang-msan,
-                           gcc-tsan, clang-tsan, gcc-usan, clang-usan,
-                           valgrind-massif, valgrind-memcheck,
-                           msvc, icl, gcov, llvm-cov, hardened)
+                           (<tool>[-sanitizer[-...]], e.g. clang-asan-ubsan
+                           tools: gcc, clang, msvc, icl, gcov, llvm-cov,
+                                  valgrind-memcheck, valgrind-massif, hardened
+                           sanitizers: asan, fuzz, lsan, msan, tsan, ubsan)
   --nm=NM                  use nm tool NM [$nm_default]
   --ar=AR                  use archive tool AR [$ar_default]
   --as=AS                  use assembler AS [$as_default]
@@ -1997,6 +1998,7 @@ EXTERNAL_LIBRARY_LIST="
     libzvbi
     lv2
     mediacodec
+    ohcodec
     openal
     opengl
     openssl
@@ -3409,6 +3411,9 @@ h264_mf_encoder_deps="mediafoundation"
 h264_mmal_decoder_deps="mmal"
 h264_nvenc_encoder_deps="nvenc"
 h264_nvenc_encoder_select="atsc_a53"
+h264_oh_decoder_deps="ohcodec"
+h264_oh_decoder_select="h264_mp4toannexb_bsf"
+h264_oh_encoder_deps="ohcodec"
 h264_omx_encoder_deps="omx"
 h264_qsv_decoder_select="h264_mp4toannexb_bsf qsvdec"
 h264_qsv_encoder_select="atsc_a53 qsvenc"
@@ -3431,6 +3436,9 @@ hevc_mediacodec_encoder_select="extract_extradata_bsf hevc_metadata"
 hevc_mf_encoder_deps="mediafoundation"
 hevc_nvenc_encoder_deps="nvenc"
 hevc_nvenc_encoder_select="atsc_a53"
+hevc_oh_decoder_deps="ohcodec"
+hevc_oh_decoder_select="hevc_mp4toannexb_bsf"
+hevc_oh_encoder_deps="ohcodec"
 hevc_qsv_decoder_select="hevc_mp4toannexb_bsf qsvdec"
 hevc_qsv_encoder_select="hevcparse qsvenc"
 hevc_rkmpp_decoder_deps="rkmpp"
@@ -4605,16 +4613,16 @@ set >> $logfile
 
 test -n "$valgrind" && toolchain="valgrind-memcheck"
 
-enabled ossfuzz && ! echo $CFLAGS | grep -q -- "-fsanitize="  && ! echo $CFLAGS | grep -q -- "-fcoverage-mapping" &&{
-    add_cflags  -fsanitize=address,undefined -fsanitize-coverage=trace-pc-guard,trace-cmp -fno-omit-frame-pointer
-    add_ldflags -fsanitize=address,undefined -fsanitize-coverage=trace-pc-guard,trace-cmp
-}
-
 add_sanitizer_flags(){
     case "$1" in
         asan)
             add_cflags  -fsanitize=address
             add_ldflags -fsanitize=address
+        ;;
+        fuzz)
+            add_cflags  -fsanitize=fuzzer-no-link
+            add_ldflags -fsanitize=fuzzer-no-link
+            : "${libfuzzer_path:=-fsanitize=fuzzer}"
         ;;
         lsan)
             add_cflags  -fsanitize=leak
@@ -4628,7 +4636,7 @@ add_sanitizer_flags(){
             add_cflags  -fsanitize=thread
             add_ldflags -fsanitize=thread
         ;;
-        usan)
+        usan|ubsan)
             add_cflags  -fsanitize=undefined
             add_ldflags -fsanitize=undefined
         ;;
@@ -4638,14 +4646,24 @@ add_sanitizer_flags(){
     esac
 }
 
+add_sanitizers(){
+    IFS=-
+    set -- $*
+    unset IFS
+    for sanitizer; do
+        add_sanitizer_flags "$sanitizer"
+    done
+    add_cflags -fno-omit-frame-pointer
+}
+
 case "$toolchain" in
     clang-*)
-        add_sanitizer_flags "${toolchain#clang-}"
+        add_sanitizers "${toolchain#clang-}"
         cc_default="clang"
         cxx_default="clang++"
     ;;
     gcc-*)
-        add_sanitizer_flags "${toolchain#gcc-}"
+        add_sanitizers "${toolchain#gcc-}"
         cc_default="gcc"
         cxx_default="g++"
         # In case of tsan with gcc, PIC has to be enabled
@@ -6199,7 +6217,7 @@ set_default libdir
 set_default $PATHS_LIST
 set_default nm
 
-disabled optimizations || enabled ossfuzz || check_cflags -fomit-frame-pointer
+disabled optimizations || enabled ossfuzz || echo "$CFLAGS" | grep -q -- '-fsanitize=' || check_cflags -fomit-frame-pointer
 
 enable_weak_pic() {
     disabled pic && return
@@ -7174,6 +7192,10 @@ enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_co
                                  check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host; } ||
                                die "ERROR: mmal not found" &&
                                check_func_headers interface/mmal/mmal.h "MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS"; }
+enabled ohcodec           && { check_lib ohcodec "multimedia/player_framework/native_avcodec_videodecoder.h multimedia/player_framework/native_avcodec_videoencoder.h" \
+                                    "OH_VideoDecoder_CreateByName OH_VideoEncoder_CreateByName" \
+                                    -lnative_media_vdec -lnative_media_venc -lnative_media_codecbase -lnative_media_core -lnative_window ||
+                               die "ERROR: missing native_media libs"; }
 enabled openal            && { check_pkg_config openal "openal >= 1.1" "AL/al.h" alGetError ||
                                { for al_extralibs in "${OPENAL_LIBS}" "-lopenal" "-lOpenAL32"; do
                                check_lib openal 'AL/al.h' alGetError "${al_extralibs}" && break; done } ||

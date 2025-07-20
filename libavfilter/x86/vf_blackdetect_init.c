@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2025 Niklas Haas
+ *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -16,20 +18,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVFORMAT_CBS_H
-#define AVFORMAT_CBS_H
+#include "libavutil/attributes.h"
+#include "libavutil/x86/cpu.h"
+#include "libavfilter/vf_blackdetect.h"
 
-#define CBS_PREFIX lavf_cbs
-#define CBS_WRITE 0
-#define CBS_TRACE 0
-#define CBS_H264 0
-#define CBS_H265 0
-#define CBS_H266 0
-#define CBS_JPEG 0
-#define CBS_MPEG2 0
-#define CBS_VP8 0
-#define CBS_VP9 0
+unsigned ff_blackdetect_8_avx2(const uint8_t *, ptrdiff_t, ptrdiff_t, ptrdiff_t, unsigned);
+unsigned ff_blackdetect_16_avx2(const uint8_t *, ptrdiff_t, ptrdiff_t, ptrdiff_t, unsigned);
 
-#include "libavcodec/cbs.h"
-
-#endif /* AVFORMAT_CBS_H */
+av_cold ff_blackdetect_fn ff_blackdetect_get_fn_x86(int depth)
+{
+    int cpu_flags = av_get_cpu_flags();
+    if (EXTERNAL_AVX2_FAST(cpu_flags))
+        return depth == 8 ? ff_blackdetect_8_avx2 : ff_blackdetect_16_avx2;
+    return NULL;
+}
