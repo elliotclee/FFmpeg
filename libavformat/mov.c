@@ -1407,7 +1407,9 @@ static int mov_read_adrm(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     avio_read(pb, output, 8); // go to offset 8, absolute position 0x251
     avio_read(pb, input, DRM_BLOB_SIZE);
     avio_read(pb, output, 4); // go to offset 4, absolute position 0x28d
-    avio_read(pb, file_checksum, 20);
+    ret = ffio_read_size(pb, file_checksum, 20);
+    if (ret < 0)
+        goto fail;
 
     // required by external tools
     ff_data_to_hex(checksum_string, file_checksum, sizeof(file_checksum), 1);
@@ -5223,17 +5225,13 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     }
 
     switch (st->codecpar->codec_id) {
-#if CONFIG_H261_DECODER
     case AV_CODEC_ID_H261:
-#endif
-#if CONFIG_H263_DECODER
     case AV_CODEC_ID_H263:
-#endif
-#if CONFIG_MPEG4_DECODER
     case AV_CODEC_ID_MPEG4:
-#endif
         st->codecpar->width = 0; /* let decoder init width/height */
         st->codecpar->height= 0;
+        break;
+    default:
         break;
     }
 
@@ -6596,6 +6594,85 @@ static int mov_read_st3d(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_pack(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+    MOVStreamContext *sc;
+    int size = 0;
+    int64_t remaining;
+    uint32_t tag = 0;
+    enum AVStereo3DType type = AV_STEREO3D_2D;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+
+    st = c->fc->streams[c->fc->nb_streams - 1];
+    sc = st->priv_data;
+
+    remaining = atom.size;
+    while (remaining > 0) {
+        size = avio_rb32(pb);
+        if (size < 8 || size > remaining ) {
+            av_log(c->fc, AV_LOG_ERROR, "Invalid child size in pack box\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        tag = avio_rl32(pb);
+        switch (tag) {
+        case MKTAG('p','k','i','n'): {
+            if (size != 16) {
+                av_log(c->fc, AV_LOG_ERROR, "Invalid size of pkin box: %d\n", size);
+                return AVERROR_INVALIDDATA;
+            }
+            avio_skip(pb, 1); // version
+            avio_skip(pb, 3); // flags
+
+            tag = avio_rl32(pb);
+            switch (tag) {
+            case MKTAG('s','i','d','e'):
+                type = AV_STEREO3D_SIDEBYSIDE;
+                break;
+            case MKTAG('o','v','e','r'):
+                type = AV_STEREO3D_TOPBOTTOM;
+                break;
+            case 0:
+                // This means value will be set in another layer
+                break;
+            default:
+                av_log(c->fc, AV_LOG_WARNING, "Unknown tag in pkin: 0x%08X\n", tag);
+                avio_skip(pb, size - 8);
+                break;
+            }
+
+            break;
+        }
+        default:
+            av_log(c->fc, AV_LOG_WARNING, "Unknown tag in pack: 0x%08X\n", tag);
+            avio_skip(pb, size - 8);
+            break;
+        }
+        remaining -= size;
+    }
+
+    if (remaining != 0) {
+        av_log(c->fc, AV_LOG_ERROR, "Broken pack box\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    if (type == AV_STEREO3D_2D)
+        return 0;
+
+    if (!sc->stereo3d) {
+        sc->stereo3d = av_stereo3d_alloc_size(&sc->stereo3d_size);
+        if (!sc->stereo3d)
+            return AVERROR(ENOMEM);
+    }
+
+    sc->stereo3d->type = type;
+
+    return 0;
+}
+
 static int mov_read_sv3d(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -6780,6 +6857,9 @@ static int mov_read_vexu_proj(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         break;
     case MKTAG('f','i','s','h'):
         projection = AV_SPHERICAL_FISHEYE;
+        break;
+    case MKTAG('p','r','i','m'):
+        projection = AV_SPHERICAL_PARAMETRIC_IMMERSIVE;
         break;
     default:
         av_log(c->fc, AV_LOG_ERROR, "Invalid projection type in prji box: 0x%08X\n", tag);
@@ -7003,6 +7083,13 @@ static int mov_read_vexu(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         case MKTAG('e','y','e','s'): {
             MOVAtom eyes = { tag, size - 8 };
             int ret = mov_read_eyes(c, pb, eyes);
+            if (ret < 0)
+                return ret;
+            break;
+        }
+        case MKTAG('p','a','c','k'): {
+            MOVAtom pack = { tag, size - 8 };
+            int ret = mov_read_pack(c, pb, pack);
             if (ret < 0)
                 return ret;
             break;
@@ -10578,6 +10665,20 @@ static int mov_read_header(AVFormatContext *s)
         MOVStreamContext *sc = st->priv_data;
         uint32_t dvdsub_clut[FF_DVDCLUT_CLUT_LEN] = {0};
         fix_timescale(mov, sc);
+
+        /* Set the primary extradata based on the first Sample. */
+        if (sc->stsc_count && sc->extradata_size && !sc->iamf) {
+            sc->last_stsd_index = sc->stsc_data[0].id - 1;
+            av_freep(&st->codecpar->extradata);
+            st->codecpar->extradata_size = sc->extradata_size[sc->last_stsd_index];
+            if (sc->extradata_size[sc->last_stsd_index]) {
+                st->codecpar->extradata = av_mallocz(sc->extradata_size[sc->last_stsd_index] + AV_INPUT_BUFFER_PADDING_SIZE);
+                if (!st->codecpar->extradata)
+                    return AVERROR(ENOMEM);
+                memcpy(st->codecpar->extradata, sc->extradata[sc->last_stsd_index], sc->extradata_size[sc->last_stsd_index]);
+            }
+        }
+
         if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
             st->codecpar->codec_id   == AV_CODEC_ID_AAC) {
             sti->skip_samples = sc->start_pad;

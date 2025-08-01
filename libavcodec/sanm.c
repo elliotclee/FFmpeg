@@ -1601,6 +1601,11 @@ static int old_codec48(SANMVideoContext *ctx, int width, int height)
         }
         break;
     case 2:
+        if (decoded_size > ctx->buf_size) {
+            av_log(ctx->avctx, AV_LOG_ERROR, "Decoded size %u is too large.\n", decoded_size);
+            return AVERROR_INVALIDDATA;
+        }
+
         if (rle_decode(ctx, &ctx->gb, dst, decoded_size))
             return AVERROR_INVALIDDATA;
         break;
@@ -1670,6 +1675,8 @@ static int process_frame_obj(SANMVideoContext *ctx, GetByteContext *gb)
             /* Rebel Assault 1: 384x242 internal size */
             xres = 384;
             yres = 242;
+            if (w > xres || h > yres)
+                return AVERROR_INVALIDDATA;
             ctx->have_dimensions = 1;
         } else if (codec == 37 || codec == 47 || codec == 48) {
             /* these codecs work on full frames, trust their dimensions */
