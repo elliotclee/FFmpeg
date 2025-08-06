@@ -756,8 +756,8 @@ static int test_segment(AVFormatContext *s, const AVInputFormat *in_fmt, struct 
                      + 2*(ff_match_url_ext(seg->url, in_fmt->extensions) > 0);
             // Youtube uses aac files with .ts extension
             if(av_match_name("mp4", in_fmt->name) || av_match_name("aac", in_fmt->name)) {
-                matchF |=      av_match_ext(    seg->url, "ts,m2t,m2ts,mts,mpg,m4s,mpeg,mpegts")
-                          + 2*(ff_match_url_ext(seg->url, "ts,m2t,m2ts,mts,mpg,m4s,mpeg,mpegts") > 0);
+                matchF |=      av_match_ext(    seg->url, "ts,m2t,m2ts,mts,mpg,m4s,mpeg,mpegts,cmfv,cmfa")
+                          + 2*(ff_match_url_ext(seg->url, "ts,m2t,m2ts,mts,mpg,m4s,mpeg,mpegts,cmfv,cmfa") > 0);
             }
         } else if (!strcmp(in_fmt->name, "mpegts")) {
             const char *str = "ts,m2t,m2ts,mts,mpg,m4s,mpeg,mpegts"
@@ -2726,7 +2726,7 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
         if (pls->is_subtitle)
             avformat_close_input(&pls->ctx);
 
-        /* Reset the init segment so it's re-fetched and served appropiately */
+        /* Reset the init segment so it's re-fetched and served appropriately */
         pls->cur_init_section = NULL;
 
         pls->seek_timestamp = seek_timestamp;

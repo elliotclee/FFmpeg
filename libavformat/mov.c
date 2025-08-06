@@ -3028,6 +3028,27 @@ static int mov_skip_multiple_stsd(MOVContext *c, AVIOContext *pb,
     return 0;
 }
 
+static int mov_finalize_stsd_entry(MOVContext *c, AVStream *st)
+{
+    int ret;
+
+    /* special codec parameters handling */
+    switch (st->codecpar->codec_id) {
+    case AV_CODEC_ID_H264:
+        // done for ai5q, ai52, ai55, ai1q, ai12 and ai15.
+        if (!st->codecpar->extradata_size && TAG_IS_AVCI(st->codecpar->codec_tag)) {
+            ret = ff_generate_avci_extradata(st);
+            if (ret < 0)
+               return ret;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return 0;
+}
+
 int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
 {
     AVStream *st;
@@ -3104,6 +3125,10 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
                 return ret;
         } else if (a.size > 0)
             avio_skip(pb, a.size);
+
+        ret = mov_finalize_stsd_entry(c, st);
+        if (ret < 0)
+            return ret;
 
         if (sc->extradata && st->codecpar->extradata) {
             int extra_size = st->codecpar->extradata_size;
@@ -3950,7 +3975,7 @@ static int find_prev_closest_index(AVStream *st,
 
         while (*index >= 0 && (*tts_index) >= 0 && (*tts_index) < tts_count) {
             // Find a "key frame" with PTS <= timestamp_pts (So that we can decode B-frames correctly).
-            // No need to add dts_shift to the timestamp here becase timestamp_pts has already been
+            // No need to add dts_shift to the timestamp here because timestamp_pts has already been
             // compensated by dts_shift above.
             if ((e_old[*index].timestamp + tts_data[*tts_index].offset) <= timestamp_pts &&
                 (e_old[*index].flags & AVINDEX_KEYFRAME)) {
@@ -4448,7 +4473,7 @@ static void mov_fix_index(MOVContext *mov, AVStream *st)
         }
     }
     // If there are empty edits, then msc->min_corrected_pts might be positive
-    // intentionally. So we subtract the sum duration of emtpy edits here.
+    // intentionally. So we subtract the sum duration of empty edits here.
     msc->min_corrected_pts -= empty_edits_sum_duration;
 
     // If the minimum pts turns out to be greater than zero after fixing the index, then we subtract the
@@ -5216,14 +5241,6 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 #endif
     }
 
-    // done for ai5q, ai52, ai55, ai1q, ai12 and ai15.
-    if (!st->codecpar->extradata_size && st->codecpar->codec_id == AV_CODEC_ID_H264 &&
-        TAG_IS_AVCI(st->codecpar->codec_tag)) {
-        ret = ff_generate_avci_extradata(st);
-        if (ret < 0)
-            return ret;
-    }
-
     switch (st->codecpar->codec_id) {
     case AV_CODEC_ID_H261:
     case AV_CODEC_ID_H263:
@@ -5406,7 +5423,7 @@ static int heif_add_stream(MOVContext *c, HEIFItem *item)
         return AVERROR(ENOMEM);
     sc = av_mallocz(sizeof(MOVStreamContext));
     if (!sc)
-        return AVERROR(ENOMEM);
+        goto fail;
 
     item->st = st;
     st->id = item->item_id;
@@ -5427,30 +5444,36 @@ static int heif_add_stream(MOVContext *c, HEIFItem *item)
         av_dict_set(&st->metadata, "title", item->name, 0);
 
     // Populate the necessary fields used by mov_build_index.
-    sc->stsc_count = 1;
     sc->stsc_data = av_malloc_array(1, sizeof(*sc->stsc_data));
     if (!sc->stsc_data)
-        return AVERROR(ENOMEM);
+        goto fail;
+    sc->stsc_count = 1;
     sc->stsc_data[0].first = 1;
     sc->stsc_data[0].count = 1;
     sc->stsc_data[0].id = 1;
     sc->chunk_offsets = av_malloc_array(1, sizeof(*sc->chunk_offsets));
     if (!sc->chunk_offsets)
-        return AVERROR(ENOMEM);
+        goto fail;
     sc->chunk_count = 1;
     sc->sample_sizes = av_malloc_array(1, sizeof(*sc->sample_sizes));
     if (!sc->sample_sizes)
-        return AVERROR(ENOMEM);
+        goto fail;
     sc->sample_count = 1;
     sc->stts_data = av_malloc_array(1, sizeof(*sc->stts_data));
     if (!sc->stts_data)
-        return AVERROR(ENOMEM);
+        goto fail;
     sc->stts_count = 1;
     sc->stts_data[0].count = 1;
     // Not used for still images. But needed by mov_build_index.
     sc->stts_data[0].duration = 0;
 
     return 0;
+fail:
+    mov_free_stream_context(c->fc, st);
+    ff_remove_stream(c->fc, st);
+    item->st = NULL;
+
+    return AVERROR(ENOMEM);
 }
 
 static int mov_read_meta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
@@ -8429,7 +8452,7 @@ static int mov_read_dops(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     avio_read(pb, st->codecpar->extradata + 9, size - 9);
 
     /* OpusSpecificBox is stored in big-endian, but OpusHead is
-       little-endian; aside from the preceeding magic and version they're
+       little-endian; aside from the preceding magic and version they're
        otherwise currently identical.  Data after output gain at offset 16
        doesn't need to be bytewapped. */
     pre_skip = AV_RB16A(st->codecpar->extradata + 10);
@@ -8531,7 +8554,7 @@ static int mov_read_lhvc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     num_arrays = buf[5];
     old_size = st->codecpar->extradata_size;
-    atom.size -= 8 /* account for mov_realloc_extradata offseting */
+    atom.size -= 8 /* account for mov_realloc_extradata offsetting */
                + 6 /* lhvC bytes before the arrays*/;
 
     ret = mov_realloc_extradata(st->codecpar, atom);
@@ -8928,11 +8951,12 @@ static int mov_read_infe(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             continue;
         break;
     }
-    if (!item)
+    if (!item) {
+        av_bprint_finalize(&item_name, NULL);
         return AVERROR(ENOMEM);
+    }
 
-    if (ret)
-        av_bprint_finalize(&item_name, &item->name);
+    av_bprint_finalize(&item_name, ret ? &item->name : NULL);
     item->item_id = item_id;
     item->type    = item_type;
 
@@ -8999,12 +9023,6 @@ fail:
             continue;
 
         av_freep(&item->name);
-        if (!item->st)
-            continue;
-
-        mov_free_stream_context(c->fc, item->st);
-        ff_remove_stream(c->fc, item->st);
-        item->st = NULL;
     }
     return ret;
 }
@@ -10667,7 +10685,8 @@ static int mov_read_header(AVFormatContext *s)
         fix_timescale(mov, sc);
 
         /* Set the primary extradata based on the first Sample. */
-        if (sc->stsc_count && sc->extradata_size && !sc->iamf) {
+        if (sc->stsc_count && sc->extradata_size && !sc->iamf &&
+            sc->stsc_data[0].id > 0 && sc->stsc_data[0].id <= sc->stsd_count) {
             sc->last_stsd_index = sc->stsc_data[0].id - 1;
             av_freep(&st->codecpar->extradata);
             st->codecpar->extradata_size = sc->extradata_size[sc->last_stsd_index];
