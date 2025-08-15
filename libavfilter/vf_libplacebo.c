@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <math.h>
+
 #include "libavutil/avassert.h"
 #include "libavutil/eval.h"
 #include "libavutil/fifo.h"
@@ -378,14 +380,15 @@ static int find_scaler(AVFilterContext *avctx,
     return AVERROR(EINVAL);
 }
 
-static int parse_custom_lut(LibplaceboContext *s)
+static int parse_custom_lut(AVFilterContext *avctx)
 {
+    LibplaceboContext *s = avctx->priv;
     int ret;
     uint8_t *lutbuf;
     size_t lutbuf_size;
 
     if ((ret = av_file_map(s->lut_filename, &lutbuf, &lutbuf_size, 0, s)) < 0) {
-        av_log(s, AV_LOG_ERROR,
+        av_log(avctx, AV_LOG_ERROR,
                "The LUT file '%s' could not be read: %s\n",
                s->lut_filename, av_err2str(ret));
         return ret;
@@ -506,7 +509,7 @@ static int update_settings(AVFilterContext *ctx)
 #else
     (void) e;
     if (av_dict_count(s->extra_opts) > 0)
-        av_log(s, AV_LOG_WARNING, "extra_opts requires libplacebo >= 6.309!\n");
+        av_log(avctx, AV_LOG_WARNING, "extra_opts requires libplacebo >= 6.309!\n");
 #endif
 
     return 0;
@@ -522,7 +525,7 @@ static int parse_shader(AVFilterContext *avctx, const void *shader, size_t len)
 
     hook = pl_mpv_user_shader_parse(s->gpu, shader, len);
     if (!hook) {
-        av_log(s, AV_LOG_ERROR, "Failed parsing custom shader!\n");
+        av_log(avctx, AV_LOG_ERROR, "Failed parsing custom shader!\n");
         return AVERROR(EINVAL);
     }
 
@@ -721,7 +724,7 @@ static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwct
         /* Import libavfilter vulkan context into libplacebo */
         s->vulkan = pl_vulkan_import(s->log, &import_params);
 #else
-        av_log(s, AV_LOG_ERROR, "libplacebo version %s too old to import "
+        av_log(avctx, AV_LOG_ERROR, "libplacebo version %s too old to import "
                "Vulkan device, remove it or upgrade libplacebo to >= 5.278\n",
                PL_VERSION);
         err = AVERROR_EXTERNAL;
@@ -736,7 +739,7 @@ static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwct
     }
 
     if (!s->vulkan) {
-        av_log(s, AV_LOG_ERROR, "Failed %s Vulkan device!\n",
+        av_log(avctx, AV_LOG_ERROR, "Failed %s Vulkan device!\n",
                hwctx ? "importing" : "creating");
         err = AVERROR_EXTERNAL;
         goto fail;
@@ -757,7 +760,7 @@ static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwct
     }
 
     if (s->lut_filename)
-        RET(parse_custom_lut(s));
+        RET(parse_custom_lut(avctx));
 
     /* Initialize inputs */
     s->inputs = av_calloc(s->nb_inputs, sizeof(*s->inputs));
@@ -845,7 +848,7 @@ static void update_crops(AVFilterContext *ctx, LibplaceboInput *in,
         // own the entire pl_queue, and hence, the pointed-at frames.
         struct pl_frame *image = (struct pl_frame *) in->mix.frames[i];
         const AVFrame *src = pl_get_mapped_avframe(image);
-        double image_pts = src->pts * av_q2d(inlink->time_base);
+        double image_pts = TS2T(src->pts, inlink->time_base);
 
         /* Update dynamic variables */
         s->var_values[VAR_IN_IDX] = s->var_values[VAR_IDX] = in->idx;
@@ -913,18 +916,43 @@ static int output_frame(AVFilterContext *ctx, int64_t pts)
     pl_options opts = s->opts;
     AVFilterLink *outlink = ctx->outputs[0];
     const AVPixFmtDescriptor *outdesc = av_pix_fmt_desc_get(outlink->format);
+    const double target_pts = TS2T(pts, outlink->time_base);
     struct pl_frame target;
     const AVFrame *ref = NULL;
     AVFrame *out;
 
-    /* Use the first active input as metadata reference */
+    /* Count the number of visible inputs, by excluding frames which are fully
+     * obscured or which have no frames in the mix */
+    int idx_start = 0, nb_visible = 0;
     for (int i = 0; i < s->nb_inputs; i++) {
-        const LibplaceboInput *in = &s->inputs[i];
-        if (in->qstatus == PL_QUEUE_OK && (ref = ref_frame(&in->mix)))
-            break;
+        LibplaceboInput *in = &s->inputs[i];
+        struct pl_frame dummy;
+        if (in->qstatus != PL_QUEUE_OK || !in->mix.num_frames)
+            continue;
+        const struct pl_frame *cur = pl_frame_mix_nearest(&in->mix);
+        av_assert1(cur);
+        update_crops(ctx, in, &dummy, target_pts);
+        const int x0 = roundf(FFMIN(dummy.crop.x0, dummy.crop.x1)),
+                  y0 = roundf(FFMIN(dummy.crop.y0, dummy.crop.y1)),
+                  x1 = roundf(FFMAX(dummy.crop.x0, dummy.crop.x1)),
+                  y1 = roundf(FFMAX(dummy.crop.y0, dummy.crop.y1));
+
+        /* If an opaque frame covers entire the output, disregard all lower layers */
+        const bool cropped = x0 > 0 || y0 > 0 || x1 < outlink->w || y1 < outlink->h;
+        if (!cropped && cur->repr.alpha == PL_ALPHA_NONE) {
+            idx_start = i;
+            nb_visible = 0;
+            ref = NULL;
+        }
+        /* Use first visible input as overall reference */
+        if (!ref)
+            ref = ref_frame(&in->mix);
+        nb_visible++;
     }
-    if (!ref)
-        return 0;
+
+    /* It should be impossible to call output_frame() without at least one
+     * valid nonempty frame mix */
+    av_assert1(nb_visible > 0);
 
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out)
@@ -989,16 +1017,21 @@ static int output_frame(AVFilterContext *ctx, int64_t pts)
 
     struct pl_frame orig_target = target;
     bool use_linear_compositor = false;
-    if (s->linear_tex && target.color.transfer != PL_COLOR_TRC_LINEAR && !s->disable_linear) {
-        use_linear_compositor = true;
-        target.color.transfer = PL_COLOR_TRC_LINEAR;
-        target.repr = pl_color_repr_rgb;
-        target.num_planes = 1;
-        target.planes[0] = (struct pl_plane) {
-            .components = 4,
-            .component_mapping = {0, 1, 2, 3},
-            .texture = s->linear_tex,
+    if (s->linear_tex && target.color.transfer != PL_COLOR_TRC_LINEAR &&
+        !s->disable_linear && nb_visible > 1) {
+        target = (struct pl_frame) {
+            .num_planes = 1,
+            .planes[0] = {
+                .components = 4,
+                .component_mapping = {0, 1, 2, 3},
+                .texture = s->linear_tex,
+            },
+            .repr = pl_color_repr_rgb,
+            .color = orig_target.color,
+            .rotation = orig_target.rotation,
         };
+        target.color.transfer = PL_COLOR_TRC_LINEAR;
+        use_linear_compositor = true;
     }
 
     /* Draw first frame opaque, others with blending */
@@ -1010,13 +1043,15 @@ static int output_frame(AVFilterContext *ctx, int64_t pts)
 #endif
     for (int i = 0; i < s->nb_inputs; i++) {
         LibplaceboInput *in = &s->inputs[i];
-        FilterLink *il = ff_filter_link(ctx->inputs[in->idx]);
+        FilterLink *il = ff_filter_link(ctx->inputs[i]);
         FilterLink *ol = ff_filter_link(outlink);
         int high_fps = av_cmp_q(il->frame_rate, ol->frame_rate) >= 0;
-        if (in->qstatus != PL_QUEUE_OK)
+        if (in->qstatus != PL_QUEUE_OK || !in->mix.num_frames || i < idx_start) {
+            pl_renderer_flush_cache(in->renderer);
             continue;
+        }
         opts->params.skip_caching_single_frame = high_fps;
-        update_crops(ctx, in, &target, out->pts * av_q2d(outlink->time_base));
+        update_crops(ctx, in, &target, target_pts);
         pl_render_image_mix(in->renderer, &in->mix, &target, &opts->params);
 
         /* Force straight output and set correct blend mode */
@@ -1093,8 +1128,8 @@ static int handle_input(AVFilterContext *ctx, LibplaceboInput *input)
 
     while ((ret = ff_inlink_consume_frame(inlink, &in)) > 0) {
         struct pl_source_frame src = {
-            .pts         = in->pts * av_q2d(inlink->time_base),
-            .duration    = in->duration * av_q2d(inlink->time_base),
+            .pts         = TS2T(in->pts, inlink->time_base),
+            .duration    = TS2T(in->duration, inlink->time_base),
             .first_field = s->deinterlace ? pl_field_from_avframe(in) : PL_FIELD_NONE,
             .frame_data  = in,
             .map         = map_frame,
@@ -1171,7 +1206,7 @@ static int libplacebo_activate(AVFilterContext *ctx)
                 if (av_fifo_peek(in->out_pts, &pts, 1, 0) >= 0) {
                     out_pts = FFMIN(out_pts, pts);
                 } else if (!in->status) {
-                    ff_inlink_request_frame(ctx->inputs[in->idx]);
+                    ff_inlink_request_frame(ctx->inputs[i]);
                     retry = true;
                 }
             }
@@ -1190,18 +1225,18 @@ static int libplacebo_activate(AVFilterContext *ctx)
             }
 
             in->qstatus = pl_queue_update(in->queue, &in->mix, pl_queue_params(
-                .pts            = out_pts * av_q2d(outlink->time_base),
+                .pts            = TS2T(out_pts, outlink->time_base),
                 .radius         = pl_frame_mix_radius(&s->opts->params),
                 .vsync_duration = l->frame_rate.num ? av_q2d(av_inv_q(l->frame_rate)) : 0,
             ));
 
             switch (in->qstatus) {
             case PL_QUEUE_MORE:
-                ff_inlink_request_frame(ctx->inputs[in->idx]);
+                ff_inlink_request_frame(ctx->inputs[i]);
                 retry = true;
                 break;
             case PL_QUEUE_OK:
-                ok = true;
+                ok |= in->mix.num_frames > 0;
                 break;
             case PL_QUEUE_ERR:
                 return AVERROR_EXTERNAL;
@@ -1381,9 +1416,9 @@ static int libplacebo_config_output(AVFilterLink *outlink)
         }
 
         if (!ok) {
-            av_log(s, AV_LOG_WARNING, "Failed to create a linear texture for "
-                    "compositing multiple inputs, falling back to non-linear "
-                    "blending.\n");
+            av_log(avctx, AV_LOG_WARNING, "Failed to create a linear texture "
+                   "for compositing multiple inputs, falling back to non-linear "
+                   "blending.\n");
         }
     }
 

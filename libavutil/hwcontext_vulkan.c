@@ -90,6 +90,12 @@ typedef struct VulkanDeviceFeatures {
 #ifdef VK_KHR_video_maintenance2
     VkPhysicalDeviceVideoMaintenance2FeaturesKHR video_maintenance_2;
 #endif
+#ifdef VK_KHR_video_decode_vp9
+    VkPhysicalDeviceVideoDecodeVP9FeaturesKHR vp9_decode;
+#endif
+#ifdef VK_KHR_video_encode_av1
+    VkPhysicalDeviceVideoEncodeAV1FeaturesKHR av1_encode;
+#endif
 
     VkPhysicalDeviceShaderObjectFeaturesEXT shader_object;
     VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix;
@@ -230,6 +236,14 @@ static void device_features_init(AVHWDeviceContext *ctx, VulkanDeviceFeatures *f
     FF_VK_STRUCT_EXT(s, &feats->device, &feats->video_maintenance_2, FF_VK_EXT_VIDEO_MAINTENANCE_2,
                      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR);
 #endif
+#ifdef VK_KHR_video_decode_vp9
+    FF_VK_STRUCT_EXT(s, &feats->device, &feats->vp9_decode, FF_VK_EXT_VIDEO_DECODE_VP9,
+                     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_DECODE_VP9_FEATURES_KHR);
+#endif
+#ifdef VK_KHR_video_encode_av1
+    FF_VK_STRUCT_EXT(s, &feats->device, &feats->av1_encode, FF_VK_EXT_VIDEO_ENCODE_AV1,
+                     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_AV1_FEATURES_KHR);
+#endif
 
     FF_VK_STRUCT_EXT(s, &feats->device, &feats->shader_object, FF_VK_EXT_SHADER_OBJECT,
                      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT);
@@ -300,6 +314,14 @@ static void device_features_copy_needed(VulkanDeviceFeatures *dst, VulkanDeviceF
     COPY_VAL(video_maintenance_1.videoMaintenance1);
 #ifdef VK_KHR_video_maintenance2
     COPY_VAL(video_maintenance_2.videoMaintenance2);
+#endif
+
+#ifdef VK_KHR_video_decode_vp9
+    COPY_VAL(vp9_decode.videoDecodeVP9);
+#endif
+
+#ifdef VK_KHR_video_encode_av1
+    COPY_VAL(av1_encode.videoEncodeAV1);
 #endif
 
     COPY_VAL(shader_object.shaderObject);
@@ -378,6 +400,9 @@ static const struct FFVkFormatEntry {
     { VK_FORMAT_R16_UNORM,  AV_PIX_FMT_GBRAP16,  VK_IMAGE_ASPECT_COLOR_BIT, 4, 4, 4, { VK_FORMAT_R16_UNORM,  VK_FORMAT_R16_UNORM,  VK_FORMAT_R16_UNORM,  VK_FORMAT_R16_UNORM  } },
     { VK_FORMAT_R32_UINT,   AV_PIX_FMT_GBRAP32,  VK_IMAGE_ASPECT_COLOR_BIT, 4, 4, 4, { VK_FORMAT_R32_UINT,   VK_FORMAT_R32_UINT,   VK_FORMAT_R32_UINT,   VK_FORMAT_R32_UINT   } },
     { VK_FORMAT_R32_SFLOAT, AV_PIX_FMT_GBRAPF32, VK_IMAGE_ASPECT_COLOR_BIT, 4, 4, 4, { VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32_SFLOAT } },
+
+    /* Bayer */
+    { VK_FORMAT_R16_UNORM, AV_PIX_FMT_BAYER_RGGB16, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_R16_UNORM } },
 
     /* Two-plane 420 YUV at 8, 10, 12 and 16 bits */
     { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                  AV_PIX_FMT_NV12, ASPECT_2PLANE, 2, 1, 2, { VK_FORMAT_R8_UNORM,  VK_FORMAT_R8G8_UNORM   } },
@@ -644,6 +669,12 @@ static const VulkanOptExtension optional_device_exts[] = {
     { VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME,                FF_VK_EXT_VIDEO_DECODE_H264      },
     { VK_KHR_VIDEO_ENCODE_H265_EXTENSION_NAME,                FF_VK_EXT_VIDEO_ENCODE_H265      },
     { VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME,                FF_VK_EXT_VIDEO_DECODE_H265      },
+#ifdef VK_KHR_video_decode_vp9
+    { VK_KHR_VIDEO_DECODE_VP9_EXTENSION_NAME,                 FF_VK_EXT_VIDEO_DECODE_VP9       },
+#endif
+#ifdef VK_KHR_video_encode_av1
+    { VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME,                 FF_VK_EXT_VIDEO_ENCODE_AV1       },
+#endif
     { VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME,                 FF_VK_EXT_VIDEO_DECODE_AV1       },
 };
 
@@ -1548,6 +1579,13 @@ static int setup_queue_families(AVHWDeviceContext *ctx, VkDeviceCreateInfo *cd)
     PICK_QF(VK_QUEUE_VIDEO_ENCODE_BIT_KHR, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR);
     PICK_QF(VK_QUEUE_VIDEO_DECODE_BIT_KHR, VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR);
 
+#ifdef VK_KHR_video_decode_vp9
+    PICK_QF(VK_QUEUE_VIDEO_DECODE_BIT_KHR, VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR);
+#endif
+
+#ifdef VK_KHR_video_encode_av1
+    PICK_QF(VK_QUEUE_VIDEO_ENCODE_BIT_KHR, VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
+#endif
     PICK_QF(VK_QUEUE_VIDEO_DECODE_BIT_KHR, VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
 
     av_free(qf);
@@ -2868,7 +2906,7 @@ static int vulkan_frames_init(AVHWFramesContext *hwfc)
     if (p->dev_is_nvidia &&
         (((fmt->nb_images == 1) && (fmt->vk_planes > 1)) ||
          (av_pix_fmt_desc_get(hwfc->sw_format)->nb_components == 1)))
-        supported_usage &= ~VK_IMAGE_USAGE_HOST_TRANSFER_BIT;
+        supported_usage &= ~VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT;
 
     /* Image usage flags */
     if (!hwctx->usage) {
@@ -2999,7 +3037,7 @@ static int vulkan_frames_init(AVHWFramesContext *hwfc)
             }
 
             if (mod_props == NULL) {
-                av_log(hwfc, AV_LOG_ERROR, "No DRM format modifier properties found for modifier 0x%016lx\n",
+                av_log(hwfc, AV_LOG_ERROR, "No DRM format modifier properties found for modifier 0x%016"PRIx64"\n",
                           drm_mod.drmFormatModifier);
                 av_free(modp.pDrmFormatModifierProperties);
                 vulkan_frame_free(hwfc, f);
@@ -3948,7 +3986,7 @@ static VkImageAspectFlags plane_index_to_aspect(int plane) {
     if (plane == 2) return VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT;
     if (plane == 3) return VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT;
 
-    av_assert2 (false && "Invalid plane index");
+    av_assert2 (0 && "Invalid plane index");
     return VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT;
 }
 
