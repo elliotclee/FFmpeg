@@ -108,6 +108,7 @@ Configuration options:
   --disable-runtime-cpudetect disable detecting CPU capabilities at runtime (smaller binary)
   --enable-gray            enable full grayscale support (slower color)
   --disable-swscale-alpha  disable alpha channel support in swscale
+  --disable-unstable       disable building optional unstable / experimental code
   --disable-all            disable building components, libraries and programs
   --disable-autodetect     disable automatically detected external libraries [no]
 
@@ -2073,6 +2074,7 @@ FEATURE_LIST="
     small
     static
     swscale_alpha
+    unstable
 "
 
 # this list should be kept in linking order
@@ -4235,6 +4237,7 @@ enable runtime_cpudetect
 enable safe_bitstream_reader
 enable static
 enable swscale_alpha
+enable unstable
 enable valgrind_backtrace
 
 sws_max_filter_size_default=256
@@ -8175,6 +8178,7 @@ echo "perl enabled              ${perl-no}"
 echo "pod2man enabled           ${pod2man-no}"
 echo "makeinfo enabled          ${makeinfo-no}"
 echo "makeinfo supports HTML    ${makeinfo_html-no}"
+echo "experimental features     ${unstable-no}"
 echo "xmllint enabled           ${xmllint-no}"
 test -n "$random_seed" &&
     echo "random seed               ${random_seed}"

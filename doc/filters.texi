@@ -14307,6 +14307,10 @@ A '|'-separated list of color space names, such as
 A '|'-separated list of color range names, such as
 "color_ranges=tv|pc".
 
+@item alpha_modes
+A '|'-separated list of color range names, such as
+"alpha_modes=straight|premultiplied".
+
 @end table
 
 @subsection Examples
@@ -16516,6 +16520,10 @@ value of @code{auto} outputs frames in the same format as the input frames,
 leading to no change. For any other value, conversion will be performed.
 
 See the @ref{setparams} filter for a list of possible values.
+
+@item alpha_mode
+Choose the desired output alpha mode, when the output format has an alpha
+channel. See the @ref{setparams} filter for a list of possible values.
 
 @item apply_filmgrain
 Apply film grain (e.g. AV1 or H.274) if present in source frames, and strip
@@ -18867,7 +18875,8 @@ See @ref{framesync}.
 
 @item alpha
 Set format of alpha of the overlaid video, it can be @var{straight} or
-@var{premultiplied}. Default is @var{straight}.
+@var{premultiplied}, or @var{auto} to choose the alpha mode automatically.
+Default is @var{auto}.
 @end table
 
 The @option{x}, and @option{y} expressions can contain the following
@@ -19626,6 +19635,20 @@ By default value 0xf, all planes will be processed.
 
 @item inplace
 Do not require 2nd input for processing, instead use alpha plane from input stream.
+@end table
+
+@section premultiply_dynamic
+Dynamically premultiply or unpremultiply the input video stream as needed,
+to match the requirements of the downstream filter graph. This is roughly
+equivalent to either @code{premultiply:inplace=yes} or
+@code{unpremultiply:inplace=yes}, or otherwise a noop.
+
+The filter accepts the following option:
+
+@table @option
+@item planes
+Set which planes will be processed, unprocessed planes will be copied.
+By default value 0xf, all planes will be processed.
 @end table
 
 @section prewitt
@@ -21739,6 +21762,19 @@ Keep the same chroma location (default).
 @item top
 @item bottomleft
 @item bottom
+@end table
+
+@item alpha_mode
+Set the alpha moda.
+Available values are:
+
+@table @samp
+@item auto
+Keep the same alpha mode (default).
+
+@item unspecified, unknown
+@item premultiplied
+@item straight
 @end table
 @end table
 
@@ -29262,6 +29298,11 @@ name.
 @item range
 A string representing the color range of the buffered video frames.
 It may be a number corresponding to a color range, or a color range
+name.
+
+@item alpha_mode
+A string representing the alpha mode of the buffered video frames.
+It may be a number corresponding to an alpha mode, or an alpha mode
 name.
 
 @item pixel_aspect, sar

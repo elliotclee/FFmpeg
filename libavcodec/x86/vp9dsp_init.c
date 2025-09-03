@@ -50,6 +50,11 @@ decl_mc_funcs(8, ssse3, int8_t, 32, 8);
 #if ARCH_X86_64
 decl_mc_funcs(16, ssse3, int8_t, 32, 8);
 decl_mc_funcs(32, avx2, int8_t, 32, 8);
+decl_subpel_asm( 4, 8, avx512icl);
+decl_subpel_asm( 8, 8, avx512icl);
+decl_subpel_asm(16, 8, avx512icl);
+decl_subpel_asm(32, 8, avx512icl);
+decl_subpel_asm(64, 8, avx512icl);
 #endif
 
 mc_rep_funcs(16,  8,  8,  sse2, int16_t,  8, 8)
@@ -202,11 +207,8 @@ ipred_dir_tm_h_funcs(8, avx);
 ipred_dir_tm_h_funcs(16, avx);
 ipred_dir_tm_h_funcs(32, avx);
 
-ipred_func(32, v, avx);
-
-ipred_dc_funcs(32, avx2);
-ipred_func(32, h, avx2);
-ipred_func(32, tm, avx2);
+ipred_all_funcs(32, avx2);
+ipred_func(32, v, avx2);
 
 #undef ipred_func
 #undef ipred_dir_tm_h_funcs
@@ -383,7 +385,6 @@ av_cold void ff_vp9dsp_init_x86(VP9DSPContext *dsp, int bpp, int bitexact)
     if (EXTERNAL_AVX_FAST(cpu_flags)) {
         init_fpel_func(1, 0, 32, put, , avx);
         init_fpel_func(0, 0, 64, put, , avx);
-        init_ipred(32, avx, v, VERT);
     }
 
     if (EXTERNAL_AVX2_FAST(cpu_flags)) {
@@ -403,9 +404,8 @@ av_cold void ff_vp9dsp_init_x86(VP9DSPContext *dsp, int bpp, int bitexact)
             init_subpel3_32_64(1, avg, 8, avx2);
 #endif
         }
-        init_dc_ipred(32, avx2);
-        init_ipred(32, avx2, h,  HOR);
-        init_ipred(32, avx2, tm, TM_VP8);
+        init_all_ipred(32, avx2);
+        init_ipred(32, avx2, v, VERT);
     }
 
 #if ARCH_X86_64
@@ -418,6 +418,11 @@ av_cold void ff_vp9dsp_init_x86(VP9DSPContext *dsp, int bpp, int bitexact)
         dsp->itxfm_add[TX_32X32][ADST_DCT]  =
         dsp->itxfm_add[TX_32X32][DCT_ADST]  =
         dsp->itxfm_add[TX_32X32][DCT_DCT]   = ff_vp9_idct_idct_32x32_add_avx512icl;
+        init_subpel_asm(4,  4, 8, avx512icl);
+        init_subpel_asm(3,  8, 8, avx512icl);
+        init_subpel_asm(2, 16, 8, avx512icl);
+        init_subpel_asm(1, 32, 8, avx512icl);
+        init_subpel_asm(0, 64, 8, avx512icl);
     }
 #endif
 
