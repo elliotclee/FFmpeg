@@ -385,6 +385,119 @@ function ff_vvc_dmvr_12_neon, export=1
         ret
 endfunc
 
+function ff_vvc_dmvr_h_8_neon, export=1
+        movrel          x7, X(ff_vvc_inter_luma_dmvr_filters)
+        add             x7, x7, x4, lsl #1
+        ld2r            {v0.16b, v1.16b}, [x7]
+        tbz             w6, #4, 12f
+20:
+        ldur            q3, [x1, #1]
+        ldr             q2, [x1]
+        umull           v4.8h, v0.8b, v2.8b
+        umull2          v5.8h, v0.16b, v2.16b
+        ldur            s17, [x1, #17]
+        umull           v6.8h, v1.8b, v3.8b
+        ldr             s16, [x1, #16]
+        umull2          v7.8h, v1.16b, v3.16b
+        add             v4.8h, v4.8h, v6.8h
+        umull           v17.8h, v1.8b, v17.8b
+        add             v5.8h, v5.8h, v7.8h
+        umull           v16.8h, v0.8b, v16.8b
+        srshr           v4.8h, v4.8h, #2
+        add             v16.4h, v16.4h, v17.4h
+        srshr           v5.8h, v5.8h, #2
+        srshr           v16.4h, v16.4h, #2
+        st1             {v4.8h, v5.8h}, [x0], #32
+        subs            w3, w3, #1
+        st1             {v16.4h}, [x0], #8
+        add             x1, x1, x2
+        add             x0, x0, #(VVC_MAX_PB_SIZE * 2 - 32 - 8)
+        b.ne            20b
+        ret
+
+12:
+        ldur            d3, [x1, #1]
+        ldr             d2, [x1]
+        umull           v4.8h, v0.8b, v2.8b
+        ldur            s17, [x1, #9]
+        umull           v6.8h, v1.8b, v3.8b
+        ldr             s16, [x1, #8]
+        add             v4.8h, v4.8h, v6.8h
+        umull           v17.8h, v1.8b, v17.8b
+        umull           v16.8h, v0.8b, v16.8b
+        srshr           v4.8h, v4.8h, #2
+        add             v16.4h, v16.4h, v17.4h
+        srshr           v16.4h, v16.4h, #2
+        st1             {v4.8h}, [x0], #16
+        subs            w3, w3, #1
+        st1             {v16.4h}, [x0], #8
+        add             x1, x1, x2
+        add             x0, x0, #(VVC_MAX_PB_SIZE * 2 - 16 - 8)
+        b.ne            12b
+        ret
+endfunc
+
+.macro vvc_dmvr_h_10 bit_depth
+function ff_vvc_dmvr_h_\bit_depth\()_neon, export=1
+        movrel          x7, X(ff_vvc_inter_luma_dmvr_filters)
+        add             x7, x7, x4, lsl #1
+        ld2r            {v0.16b, v1.16b}, [x7]
+        uxtl            v0.8h, v0.8b
+        uxtl            v1.8h, v1.8b
+        tbz             w6, #4, 12f
+20:
+        ldur            q3, [x1, #2]
+        ldr             q2, [x1]
+        ldr             q22, [x1, #16]
+        mul             v4.8h, v0.8h, v2.8h
+        mul             v6.8h, v1.8h, v3.8h
+        ldur            q23, [x1, #18]
+        mul             v5.8h, v0.8h, v22.8h
+        ldur            d17, [x1, #34]
+        mul             v7.8h, v1.8h, v23.8h
+        uhadd           v4.8h, v4.8h, v6.8h
+        ldr             d16, [x1, #32]
+        uhadd           v5.8h, v5.8h, v7.8h
+        mul             v17.4h, v1.4h, v17.4h
+        mul             v16.4h, v0.4h, v16.4h
+        urshr           v4.8h, v4.8h, #(\bit_depth - 6 - 1)
+        urshr           v5.8h, v5.8h, #(\bit_depth - 6 - 1)
+        uhadd           v16.4h, v16.4h, v17.4h
+        urshr           v16.4h, v16.4h, #(\bit_depth - 6 - 1)
+        st1             {v4.8h, v5.8h}, [x0], #32
+        subs            w3, w3, #1
+        st1             {v16.4h}, [x0], #8
+        add             x1, x1, x2
+        add             x0, x0, #(VVC_MAX_PB_SIZE * 2 - 32 - 8)
+        b.ne            20b
+        ret
+
+12:
+        ldur            q3, [x1, #2]
+        ldr             q2, [x1]
+        mul             v4.8h, v0.8h, v2.8h
+        ldur            d17, [x1, #18]
+        mul             v6.8h, v1.8h, v3.8h
+        ldr             d16, [x1, #16]
+        uhadd           v4.8h, v4.8h, v6.8h
+        mul             v17.4h, v1.4h, v17.4h
+        mul             v16.4h, v0.4h, v16.4h
+        urshr           v4.8h, v4.8h, #(\bit_depth - 6 - 1)
+        uhadd           v16.4h, v16.4h, v17.4h
+        urshr           v16.4h, v16.4h, #(\bit_depth - 6 - 1)
+        st1             {v4.8h}, [x0], #16
+        subs            w3, w3, #1
+        st1             {v16.4h}, [x0], #8
+        add             x1, x1, x2
+        add             x0, x0, #(VVC_MAX_PB_SIZE * 2 - 16 - 8)
+        b.ne            12b
+        ret
+endfunc
+.endm
+
+vvc_dmvr_h_10 10
+vvc_dmvr_h_10 12
+
 function ff_vvc_dmvr_hv_8_neon, export=1
         tmp0            .req x7
         tmp1            .req x8
@@ -393,13 +506,10 @@ function ff_vvc_dmvr_hv_8_neon, export=1
 
         movrel          x9, X(ff_vvc_inter_luma_dmvr_filters)
         add             x12, x9, mx, lsl #1
-        ldrb            w10, [x12]
-        ldrb            w11, [x12, #1]
         mov             tmp0, sp
         add             tmp1, tmp0, #(VVC_MAX_PB_SIZE * 2)
         // We know the value are positive
-        dup             v0.8h, w10                  // filter_x[0]
-        dup             v1.8h, w11                  // filter_x[1]
+        ld2r            {v0.16b, v1.16b}, [x12]
 
         add             x12, x9, my, lsl #1
         ldrb            w10, [x12]
@@ -424,14 +534,10 @@ function ff_vvc_dmvr_hv_8_neon, export=1
         // width > 16
         ldur            q5, [src, #1]
         ldr             q4, [src], #16
-        uxtl            v7.8h, v5.8b
-        uxtl2           v17.8h, v5.16b
-        uxtl            v6.8h, v4.8b
-        uxtl2           v16.8h, v4.16b
-        mul             v6.8h, v6.8h, v0.8h
-        mul             v16.8h, v16.8h, v0.8h
-        mla             v6.8h, v7.8h, v1.8h
-        mla             v16.8h, v17.8h, v1.8h
+        umull           v6.8h, v4.8b, v0.8b
+        umull2          v16.8h, v4.16b, v0.16b
+        umlal           v6.8h, v5.8b, v1.8b
+        umlal2          v16.8h, v5.16b, v1.16b
         urshr           v6.8h, v6.8h, #(8 - 6)
         urshr           v7.8h, v16.8h, #(8 - 6)
         stp             q6, q7, [x13], #32
@@ -451,10 +557,8 @@ function ff_vvc_dmvr_hv_8_neon, export=1
         // width > 8
         ldur            d5, [src, #1]
         ldr             d4, [src], #8
-        uxtl            v7.8h, v5.8b
-        uxtl            v6.8h, v4.8b
-        mul             v6.8h, v6.8h, v0.8h
-        mla             v6.8h, v7.8h, v1.8h
+        umull           v6.8h, v4.8b, v0.8b
+        umlal           v6.8h, v5.8b, v1.8b
         urshr           v6.8h, v6.8h, #(8 - 6)
         str             q6, [x13], #16
 
@@ -468,10 +572,8 @@ function ff_vvc_dmvr_hv_8_neon, export=1
 3:
         ldur            s5, [src, #1]
         ldr             s4, [src], #4
-        uxtl            v7.8h, v5.8b
-        uxtl            v6.8h, v4.8b
-        mul             v6.4h, v6.4h, v0.4h
-        mla             v6.4h, v7.4h, v1.4h
+        umull           v6.8h, v4.8b, v0.8b
+        umlal           v6.8h, v5.8b, v1.8b
         urshr           v6.4h, v6.4h, #(8 - 6)
         str             d6, [x13], #8
 
@@ -813,58 +915,44 @@ endfunc
         vy              .req x7
 
         ldr             w8, [sp]
-        movi            v7.4s, #(1 << (14 - \bit_depth))
         mov             x12, #(BDOF_BLOCK_SIZE * 2)
         mov             x14, #(VVC_MAX_PB_SIZE * 2)
 .if \bit_depth >= 10
         // clip pixel
         mov             w15, #((1 << \bit_depth) - 1)
-        movi            v18.8h, #0
         dup             v19.8h, w15
 .endif
 
 0:
-        ld1r            {v0.8h}, [vx], #2
-        ld1r            {v1.8h}, [vy], #2
-        ld1r            {v2.8h}, [vx]
-        ld1r            {v3.8h}, [vy]
+        ldr             s0, [vx], #(2 * BDOF_MIN_BLOCK_SIZE)
+        ldr             s1, [vy], #(2 * BDOF_MIN_BLOCK_SIZE)
         mov             w13, #(BDOF_MIN_BLOCK_SIZE)
-        ins             v0.d[1], v2.d[1]
-        ins             v1.d[1], v3.d[1]
 1:
-        ld1             {v2.8h}, [gh], x12
-        ld1             {v4.8h}, [gv], x12
-        smull           v3.4s, v0.4h, v2.4h
-        smull2          v16.4s, v0.8h, v2.8h
-        smlal           v3.4s, v1.4h, v4.4h
-        smlal2          v16.4s, v1.8h, v4.8h
-
         ld1             {v5.8h}, [src0], x14
         ld1             {v6.8h}, [src1], x14
-        saddl           v2.4s, v5.4h, v6.4h
-        add             v2.4s, v2.4s, v7.4s
-        add             v2.4s, v2.4s, v3.4s
-        saddl2          v4.4s, v5.8h, v6.8h
-        add             v4.4s, v4.4s, v7.4s
-        add             v4.4s, v4.4s, v16.4s
 
-        sqshrn          v5.4h, v2.4s, #(15 - \bit_depth)
-        sqshrn2         v5.8h, v4.4s, #(15 - \bit_depth)
+        saddl           v17.4s, v5.4h, v6.4h
+        ld1             {v4.8h}, [gv], x12
+        saddl2          v16.4s, v5.8h, v6.8h
+        ld1             {v2.8h}, [gh], x12
+        smlal           v17.4s, v4.4h, v1.h[0]
+        smlal2          v16.4s, v4.8h, v1.h[1]
+        smlal           v17.4s, v2.4h, v0.h[0]
+        smlal2          v16.4s, v2.8h, v0.h[1]
+
+        sqrshrun        v5.4h, v17.4s, #(15 - \bit_depth)
+        sqrshrun2       v5.8h, v16.4s, #(15 - \bit_depth)
         subs            w13, w13, #1
 .if \bit_depth == 8
         sqxtun          v5.8b, v5.8h
-        str             d5, [dst]
-        add             dst, dst, dst_stride
+        st1             {v5.8b}, [dst], dst_stride
 .else
         smin            v5.8h, v5.8h, v19.8h
-        smax            v5.8h, v5.8h, v18.8h
         st1             {v5.8h}, [dst], dst_stride
 .endif
         b.ne            1b
 
         subs            w8, w8, #(BDOF_MIN_BLOCK_SIZE)
-        add             vx, vx, #(2 * BDOF_MIN_BLOCK_SIZE - 2)
-        add             vy, vy, #(2 * BDOF_MIN_BLOCK_SIZE - 2)
         b.ne            0b
         ret
 
