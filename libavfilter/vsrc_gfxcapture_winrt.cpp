@@ -47,7 +47,6 @@ extern "C" {
 #include "vsrc_gfxcapture.h"
 }
 
-#include <atomic>
 #include <cinttypes>
 #include <condition_variable>
 #include <cwchar>
@@ -123,8 +122,8 @@ struct GfxCaptureContextWgc {
 
     std::mutex frame_arrived_mutex;
     std::condition_variable frame_arrived_cond;
-    std::atomic<bool> window_closed { false };
-    std::atomic<uint64_t> frame_seq { 0 };
+    bool window_closed { false };
+    uint64_t frame_seq { 0 };
 
     SizeInt32 cap_size { 0, 0 };
     RECT client_area_offsets { 0, 0, 0, 0 };
@@ -150,6 +149,7 @@ struct GfxCaptureContextCpp {
     volatile int wgc_thread_init_res { INT_MAX };
     std::recursive_mutex wgc_thread_uninit_mutex;
     volatile int wgc_thread_res { 0 };
+    std::shared_ptr<void> wgc_thread_cb_data;
 
     HWND capture_hwnd { nullptr };
     HMONITOR capture_hmonitor { nullptr };
@@ -196,12 +196,18 @@ static HRESULT get_activation_factory(GfxCaptureContextCpp *ctx, PCWSTR clsid, T
  ****************************************************/
 
 static void wgc_frame_arrived_handler(const std::unique_ptr<GfxCaptureContextWgc> &wgctx) {
-    wgctx->frame_seq.fetch_add(1, std::memory_order_release);
+    {
+        std::lock_guard lock(wgctx->frame_arrived_mutex);
+        wgctx->frame_seq += 1;
+    }
     wgctx->frame_arrived_cond.notify_one();
 }
 
 static void wgc_closed_handler(const std::unique_ptr<GfxCaptureContextWgc> &wgctx) {
-    wgctx->window_closed.store(true, std::memory_order_release);
+    {
+        std::lock_guard lock(wgctx->frame_arrived_mutex);
+        wgctx->window_closed = true;
+    }
     wgctx->frame_arrived_cond.notify_one();
 }
 
@@ -224,7 +230,7 @@ static void wgc_stop_capture_session(AVFilterContext *avctx) noexcept
     if (wgctx->capture_session) {
         ComPtr<IClosable> closable;
         if (SUCCEEDED(wgctx->capture_session.As(&closable))) {
-            closable->Close();
+            CHECK_HR_LOG(closable->Close());
         } else {
             av_log(avctx, AV_LOG_ERROR, "Failed to get capture session IClosable interface\n");
         }
@@ -238,6 +244,11 @@ static void wgc_stop_capture_session(AVFilterContext *avctx) noexcept
             av_log(avctx, AV_LOG_ERROR, "Failed to get frame pool IClosable interface\n");
         }
     }
+
+    wgctx->capture_session.Reset();
+    wgctx->frame_pool.Reset();
+    wgctx->capture_item.Reset();
+    wgctx->d3d_device.Reset();
 }
 
 static int wgc_calculate_client_area(AVFilterContext *avctx)
@@ -317,7 +328,7 @@ static int wgc_setup_gfxcapture_session(AVFilterContext *avctx)
     std::unique_ptr<GfxCaptureContextWgc> &wgctx = ctx->wgc;
     int ret;
 
-    ComPtr<IDirect3D11CaptureFramePoolStatics> frame_pool_statics;
+    ComPtr<IDirect3D11CaptureFramePoolStatics2> frame_pool_statics;
     ComPtr<ID3D11Device> d3d11_device = ctx->device_hwctx->device;
     ComPtr<ID3D10Multithread> d3d10_multithread;
     ComPtr<IDXGIDevice> dxgi_device;
@@ -340,8 +351,8 @@ static int wgc_setup_gfxcapture_session(AVFilterContext *avctx)
     CHECK_HR_RET(d3d11_device.As(&dxgi_device));
     CHECK_HR_RET(ctx->fn.CreateDirect3D11DeviceFromDXGIDevice(dxgi_device.Get(), &wgctx->d3d_device));
 
-    CHECK_HR_RET(get_activation_factory<IDirect3D11CaptureFramePoolStatics>(ctx, RuntimeClass_Windows_Graphics_Capture_Direct3D11CaptureFramePool, &frame_pool_statics));
-    CHECK_HR_RET(frame_pool_statics->Create(wgctx->d3d_device.Get(), fmt, CAPTURE_POOL_SIZE, wgctx->cap_size, &wgctx->frame_pool));
+    CHECK_HR_RET(get_activation_factory<IDirect3D11CaptureFramePoolStatics2>(ctx, RuntimeClass_Windows_Graphics_Capture_Direct3D11CaptureFramePool, &frame_pool_statics));
+    CHECK_HR_RET(frame_pool_statics->CreateFreeThreaded(wgctx->d3d_device.Get(), fmt, CAPTURE_POOL_SIZE, wgctx->cap_size, &wgctx->frame_pool));
     CHECK_HR_RET(wgctx->frame_pool->CreateCaptureSession(wgctx->capture_item.Get(), &wgctx->capture_session));
 
     if (SUCCEEDED(wgctx->capture_session.As(&session2))) {
@@ -431,7 +442,7 @@ static int wgc_setup_gfxcapture_capture(AVFilterContext *avctx)
     return 0;
 }
 
-static int wgc_try_get_next_frame(AVFilterContext *avctx, ComPtr<IDirect3D11CaptureFrame> *capture_frame)
+static int wgc_try_get_next_frame(AVFilterContext *avctx, ComPtr<IDirect3D11CaptureFrame> &capture_frame)
 {
     GfxCaptureContext *cctx = CCTX(avctx->priv);
     GfxCaptureContextCpp *ctx = cctx->ctx;
@@ -442,11 +453,11 @@ static int wgc_try_get_next_frame(AVFilterContext *avctx, ComPtr<IDirect3D11Capt
     ComPtr<ID3D11Texture2D> frame_texture;
     SizeInt32 frame_size = { 0, 0 };
 
-    CHECK_HR_RET(wgctx->frame_pool->TryGetNextFrame(capture_frame->ReleaseAndGetAddressOf()));
-    if (!capture_frame->Get())
+    CHECK_HR_RET(wgctx->frame_pool->TryGetNextFrame(&capture_frame));
+    if (!capture_frame)
         return AVERROR(EAGAIN);
 
-    CHECK_HR_RET(capture_frame->Get()->get_ContentSize(&frame_size));
+    CHECK_HR_RET(capture_frame->get_ContentSize(&frame_size));
     if (frame_size.Width != wgctx->cap_size.Width || frame_size.Height != wgctx->cap_size.Height) {
         av_log(avctx, AV_LOG_VERBOSE, "Capture size changed to %dx%d\n", frame_size.Width, frame_size.Height);
 
@@ -552,6 +563,9 @@ static int wgc_thread_worker(AVFilterContext *avctx)
 
         if (!msg.hwnd && msg.message == WM_WGC_THREAD_SHUTDOWN) {
             av_log(avctx, AV_LOG_DEBUG, "Initializing WGC thread shutdown\n");
+
+            wgc_stop_capture_session(avctx);
+
             if (FAILED(wgctx->dispatcher_queue_controller->ShutdownQueueAsync(&async))) {
                 av_log(avctx, AV_LOG_ERROR, "Failed to shutdown dispatcher queue\n");
                 return AVERROR_EXTERNAL;
@@ -589,7 +603,7 @@ static void wgc_thread_entry(AVFilterContext *avctx) noexcept
     {
         static const wchar_t name_prefix[] = L"wgc_winrt@0x";
         wchar_t thread_name[FF_ARRAY_ELEMS(name_prefix) + sizeof(void*) * 2] = { 0 };
-        swprintf(thread_name, FF_ARRAY_ELEMS(thread_name), L"%s%" PRIxPTR, name_prefix, (uintptr_t)avctx);
+        swprintf(thread_name, FF_ARRAY_ELEMS(thread_name), L"%ls%" PRIxPTR, name_prefix, (uintptr_t)avctx);
         ctx->fn.SetThreadDescription(GetCurrentThread(), thread_name);
 
         std::lock_guard init_lock(ctx->wgc_thread_init_mutex);
@@ -703,13 +717,17 @@ static int run_on_wgc_thread(AVFilterContext *avctx, F &&cb)
     struct CBData {
         std::mutex mutex;
         std::condition_variable cond;
-        std::atomic<bool> done { false };
-        std::atomic<bool> cancel { false };
-        int ret = AVERROR_BUG;
+        bool done;
+        bool cancel;
+        int ret;
     };
-    auto cbdata = std::make_shared<CBData>();
+    auto cbdata = ctx->wgc_thread_cb_data ?
+                  std::static_pointer_cast<CBData>(ctx->wgc_thread_cb_data) :
+                  std::make_shared<CBData>();
+    ctx->wgc_thread_cb_data = cbdata;
 
-    std::unique_lock cblock(cbdata->mutex);
+    cbdata->done = cbdata->cancel = false;
+    cbdata->ret = AVERROR_BUG;
 
     boolean res = 0;
     CHECK_HR_RET(wgctx->dispatcher_queue->TryEnqueue(
@@ -717,7 +735,7 @@ static int run_on_wgc_thread(AVFilterContext *avctx, F &&cb)
             [cb = std::forward<F>(cb), cbdata]() {
                 {
                     std::lock_guard lock(cbdata->mutex);
-                    if (cbdata->cancel.load(std::memory_order_acquire))
+                    if (cbdata->cancel)
                         return S_OK;
 
                     try {
@@ -728,7 +746,7 @@ static int run_on_wgc_thread(AVFilterContext *avctx, F &&cb)
                         cbdata->ret = AVERROR_BUG;
                     }
 
-                    cbdata->done.store(true, std::memory_order_release);
+                    cbdata->done = true;
                 }
 
                 cbdata->cond.notify_one();
@@ -739,8 +757,9 @@ static int run_on_wgc_thread(AVFilterContext *avctx, F &&cb)
         return AVERROR_EXTERNAL;
     }
 
-    if (!cbdata->cond.wait_for(cblock, std::chrono::seconds(1), [&]() { return cbdata->done.load(std::memory_order_acquire); })) {
-        cbdata->cancel.store(true, std::memory_order_release);
+    std::unique_lock cblock(cbdata->mutex);
+    if (!cbdata->cond.wait_for(cblock, std::chrono::seconds(1), [&]() { return cbdata->done; })) {
+        cbdata->cancel = true;
         av_log(avctx, AV_LOG_ERROR, "WGC thread callback timed out\n");
         return AVERROR(ETIMEDOUT);
     }
@@ -1390,9 +1409,9 @@ static int process_frame_if_exists(AVFilterLink *outlink)
         ComPtr<ID3D11Texture2D> frame_texture;
         TimeSpan frame_time = { 0 };
 
-        ret = wgc_try_get_next_frame(avctx, &capture_frame);
-        if (ret < 0)
-            return ret;
+        int res = wgc_try_get_next_frame(avctx, capture_frame);
+        if (res < 0)
+            return res;
 
         CHECK_HR_RET(capture_frame->get_SystemRelativeTime(&frame_time));
 
@@ -1455,23 +1474,22 @@ static int gfxcapture_activate(AVFilterContext *avctx)
     if (!ff_outlink_frame_wanted(outlink))
         return FFERROR_NOT_READY;
 
-    std::unique_lock frame_lock(wgctx->frame_arrived_mutex);
-
     for (;;) {
-        uint64_t last_seq = wgctx->frame_seq.load(std::memory_order_acquire);
+        uint64_t last_seq = wgctx->frame_seq;
 
         int ret = process_frame_if_exists(outlink);
         if (ret != AVERROR(EAGAIN))
             return ret;
 
-        if (wgctx->window_closed.load(std::memory_order_acquire)) {
+        std::unique_lock frame_lock(wgctx->frame_arrived_mutex);
+
+        if (wgctx->window_closed && wgctx->frame_seq == last_seq) {
             ff_outlink_set_status(outlink, AVERROR_EOF, ctx->last_pts - ctx->first_pts + 1);
             break;
         }
 
         if (!wgctx->frame_arrived_cond.wait_for(frame_lock, std::chrono::seconds(1), [&]() {
-            return wgctx->frame_seq.load(std::memory_order_acquire) != last_seq ||
-                   wgctx->window_closed.load(std::memory_order_acquire);
+            return wgctx->frame_seq != last_seq || wgctx->window_closed;
         }))
             break;
     }

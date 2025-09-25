@@ -5,6 +5,8 @@ version <next>:
 - ffprobe -codec option
 - EXIF Metadata Parsing
 - gfxcapture: Windows.Graphics.Capture based window/monitor capture
+- hxvs demuxer for HXVS/HXVT IP camera format
+- MPEG-H 3D Audio decoding via mpeghdec
 
 
 version 8.0:
