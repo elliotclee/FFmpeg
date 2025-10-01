@@ -5020,7 +5020,7 @@ msvc_flags(){
     for flag; do
         case $flag in
             -Wall)                echo -W3 -wd4018 -wd4146 -wd4244 -wd4305     \
-                                       -wd4554 ;;
+                                       -wd4554 -wd4267 ;;
             -Wextra)              echo -W4 -wd4244 -wd4127 -wd4018 -wd4389     \
                                        -wd4146 -wd4057 -wd4204 -wd4706 -wd4305 \
                                        -wd4152 -wd4324 -we4013 -wd4100 -wd4214 \
@@ -7116,7 +7116,7 @@ enabled libcelt           && require libcelt celt/celt.h celt_decode -lcelt0 &&
                                die "ERROR: libcelt must be installed and version must be >= 0.11.0."; }
 enabled libcaca           && require_pkg_config libcaca caca caca.h caca_create_canvas
 enabled libcodec2         && require libcodec2 codec2/codec2.h codec2_create -lcodec2
-enabled libdav1d          && require_pkg_config libdav1d "dav1d >= 0.5.0" "dav1d/dav1d.h" dav1d_version
+enabled libdav1d          && require_pkg_config libdav1d "dav1d >= 1.0.0" "dav1d/dav1d.h" dav1d_version
 enabled libdavs2          && require_pkg_config libdavs2 "davs2 >= 1.6.0" davs2.h davs2_decoder_open
 enabled libdc1394         && require_pkg_config libdc1394 libdc1394-2 dc1394/dc1394.h dc1394_new
 enabled libdrm            && check_pkg_config libdrm libdrm xf86drm.h drmGetVersion
@@ -7132,12 +7132,16 @@ enabled libfontconfig     && require_pkg_config libfontconfig fontconfig "fontco
 enabled libfreetype       && require_pkg_config libfreetype freetype2 "ft2build.h FT_FREETYPE_H" FT_Init_FreeType
 enabled libfribidi        && require_pkg_config libfribidi fribidi fribidi.h fribidi_version_info
 enabled libharfbuzz       && require_pkg_config libharfbuzz harfbuzz hb.h hb_buffer_create
-enabled libglslang && { check_lib spirv_compiler glslang/Include/glslang_c_interface.h glslang_initialize_process \
+if enabled libglslang; then
+    spvremap="-lSPVRemapper"
+    require_headers "glslang/build_info.h" && { test_cpp_condition glslang/build_info.h "GLSLANG_VERSION_MAJOR >= 16" && spvremap="" ; }
+    check_lib spirv_compiler glslang/Include/glslang_c_interface.h glslang_initialize_process \
                             -lglslang -lMachineIndependent -lGenericCodeGen \
-                            -lSPVRemapper -lSPIRV -lSPIRV-Tools-opt -lSPIRV-Tools -lpthread -lstdc++ -lm ||
+                            ${spvremap} -lSPIRV -lSPIRV-Tools-opt -lSPIRV-Tools -lpthread -lstdc++ -lm ||
                         require spirv_compiler glslang/Include/glslang_c_interface.h glslang_initialize_process \
                             -lglslang -lMachineIndependent -lOSDependent -lHLSL -lOGLCompiler -lGenericCodeGen \
-                            -lSPVRemapper -lSPIRV -lSPIRV-Tools-opt -lSPIRV-Tools -lpthread -lstdc++ -lm ; }
+                            ${spvremap} -lSPIRV -lSPIRV-Tools-opt -lSPIRV-Tools -lpthread -lstdc++ -lm ;
+fi
 enabled libgme            && { check_pkg_config libgme libgme gme/gme.h gme_new_emu ||
                                require libgme gme/gme.h gme_new_emu -lgme -lstdc++; }
 enabled libgsm            && { for gsm_hdr in "gsm.h" "gsm/gsm.h"; do
@@ -7190,12 +7194,13 @@ enabled libmp3lame        && require "libmp3lame >= 3.98.3" lame/lame.h lame_set
 enabled libmpeghdec       && require_pkg_config libmpeghdec "mpeghdec >= 3.0.0" mpeghdec/mpeghdecoder.h mpeghdecoder_init
 enabled libmysofa         && { check_pkg_config libmysofa libmysofa mysofa.h mysofa_neighborhood_init_withstepdefine ||
                                require libmysofa mysofa.h mysofa_neighborhood_init_withstepdefine -lmysofa $zlib_extralibs; }
-enabled libnpp            && { check_pkg_config libnppig nppig-12.9 "" "" || die "ERROR: libnppig not found"; 
-check_pkg_config libnppicc nppicc-12.9 "" "";
-check_pkg_config libnppc nppc-12.9 "" "";
-check_pkg_config libnppidei nppidei-12.9 "" "";
-check_pkg_config libnppif nppif-12.9 "" "";
-}
+enabled libnpp            && { test_cpp_condition "$(cd "$source_path"; pwd)/libavfilter/version_major.h" FF_API_LIBNPP_SUPPORT ||
+                               die "ERROR: libnpp support is removed in this version"; } &&
+                             { check_lib libnpp npp.h nppGetLibVersion -lnppig -lnppicc -lnppc -lnppidei -lnppif ||
+                               check_lib libnpp npp.h nppGetLibVersion -lnppi -lnppif -lnppc -lnppidei ||
+                               die "ERROR: libnpp not found"; } &&
+                             { check_func_headers "nppi.h" nppiYCbCr420_8u_P2P3R $libnpp_extralibs ||
+                               die "ERROR: libnpp support is deprecated, version 13.0 and up are not supported"; }
 enabled libopencore_amrnb && require libopencore_amrnb opencore-amrnb/interf_dec.h Decoder_Interface_init -lopencore-amrnb
 enabled libopencore_amrwb && require libopencore_amrwb opencore-amrwb/dec_if.h D_IF_init -lopencore-amrwb
 enabled libopencv         && { check_headers opencv2/core/core_c.h &&
