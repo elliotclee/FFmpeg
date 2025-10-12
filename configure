@@ -2955,7 +2955,7 @@ mpegvideodec_select="h264chroma mpegvideo mpeg_er"
 mpegvideoenc_select="aandcttables fdctdsp me_cmp mpegvideo mpegvideoencdsp pixblockdsp"
 msmpeg4dec_select="h263_decoder"
 msmpeg4enc_select="h263_encoder"
-vc1dsp_select="h264chroma qpeldsp startcode"
+vc1dsp_select="h264chroma startcode"
 vvc_sei_select="atsc_a53 golomb"
 wmv2dsp_select="qpeldsp"
 
@@ -3053,7 +3053,7 @@ g723_1_encoder_select="celp_math"
 g729_decoder_select="audiodsp celp_math"
 h261_decoder_select="mpegvideodec"
 h261_encoder_select="mpegvideoenc"
-h263_decoder_select="h263_parser h263dsp mpegvideodec qpeldsp"
+h263_decoder_select="h263dsp mpegvideodec"
 h263_encoder_select="h263dsp mpegvideoenc"
 h263i_decoder_select="h263_decoder"
 h263p_decoder_select="h263_decoder"
@@ -3112,7 +3112,7 @@ mpeg1video_decoder_select="mpegvideodec"
 mpeg1video_encoder_select="mpegvideoenc"
 mpeg2video_decoder_select="mpegvideodec"
 mpeg2video_encoder_select="mpegvideoenc"
-mpeg4_decoder_select="h263_decoder"
+mpeg4_decoder_select="h263_decoder qpeldsp"
 mpeg4_encoder_select="h263_encoder qpeldsp"
 msa1_decoder_select="mss34dsp"
 mscc_decoder_select="inflate_wrapper"
@@ -3121,7 +3121,7 @@ msmpeg4v2_decoder_select="msmpeg4dec"
 msmpeg4v2_encoder_select="msmpeg4enc"
 msmpeg4v3_decoder_select="msmpeg4dec"
 msmpeg4v3_encoder_select="msmpeg4enc"
-mss2_decoder_select="mpegvideodec qpeldsp vc1_decoder"
+mss2_decoder_select="mpegvideodec vc1_decoder"
 mts2_decoder_select="jpegtables mss34dsp"
 mv30_decoder_select="aandcttables blockdsp"
 mvha_decoder_select="inflate_wrapper llviddsp"
@@ -3573,7 +3573,7 @@ ftr_parser_select="adts_header mpeg4audio"
 h264_parser_select="golomb h264dsp h264parse h264_sei"
 hevc_parser_select="hevcparse hevc_sei"
 mpegaudio_parser_select="mpegaudioheader"
-mpeg4video_parser_select="h263dsp mpegvideodec qpeldsp"
+mpeg4video_parser_select="mpegvideodec"
 vc1_parser_select="vc1dsp"
 vvc_parser_select="cbs_h266"
 
@@ -6225,8 +6225,6 @@ probe_libc(){
         if ! test_${pfx}cpp_condition crtdefs.h "defined(_UCRT)"; then
             add_${pfx}cppflags -D__USE_MINGW_ANSI_STDIO=1
         fi
-        eval test \$${pfx_no_}cc_type = "gcc" &&
-            add_${pfx}cppflags -D__printf__=__gnu_printf__
         test_${pfx}cpp_condition windows.h "!defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600" &&
             add_${pfx}cppflags -D_WIN32_WINNT=0x0600
         add_${pfx}cppflags -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600
@@ -6244,8 +6242,6 @@ probe_libc(){
             add_${pfx}cppflags -D__MSVCRT_VERSION__=0x0700
         test_${pfx}cpp_condition windows.h "!defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600" &&
             add_${pfx}cppflags -D_WIN32_WINNT=0x0600
-        eval test \$${pfx_no_}cc_type = "gcc" &&
-            add_${pfx}cppflags -D__printf__=__gnu_printf__
         add_${pfx}cppflags -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600
     elif test_${pfx}cpp_condition crtversion.h "defined _VC_CRT_MAJOR_VERSION"; then
         eval ${pfx}libc_type=msvcrt

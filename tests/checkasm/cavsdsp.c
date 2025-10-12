@@ -23,19 +23,24 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/macros.h"
 #include "libavutil/mem_internal.h"
-#include "libavcodec/avcodec.h"
-#include "libavcodec/hpeldsp.h"
+#include "libavcodec/cavsdsp.h"
 
+
+enum {
+// DECLARE_ALIGNED can't handle enum constants.
 #define MAX_BLOCK_SIZE 16
-#define MAX_HEIGHT     16
-#define MAX_STRIDE     64
-// BUF_SIZE is bigger than necessary in order to test strides > block width.
-#define BUF_SIZE ((MAX_HEIGHT - 1) * MAX_STRIDE + MAX_BLOCK_SIZE)
-// Due to hpel interpolation the input needs to have one more line than
-// the output and the last line needs one more element.
-// The input is not subject to alignment requirements; making the input buffer
-// bigger (by MAX_BLOCK_SIZE - 1) allows us to use a random misalignment.
-#define INPUT_BUF_SIZE (MAX_HEIGHT * MAX_STRIDE + MAX_BLOCK_SIZE + 1 + (MAX_BLOCK_SIZE - 1))
+    MAX_STRIDE     = 64,
+    /// BUF_SIZE is bigger than necessary in order to test strides > block width.
+    BUF_SIZE       = ((MAX_BLOCK_SIZE - 1) * MAX_STRIDE + MAX_BLOCK_SIZE),
+    /**
+     * The qpel interpolation code accesses two lines above and three lines
+     * below the actual src block; it also accesses two pixels to the left
+     * and three to the right.
+     * The input is not subject to alignment requirements; making the input buffer
+     * bigger (by MAX_BLOCK_SIZE - 1) allows us to use a random misalignment.
+     */
+    INPUT_BUF_SIZE = (2 + (2 + MAX_BLOCK_SIZE - 1 + 3) * MAX_STRIDE + MAX_BLOCK_SIZE + 3 + (MAX_BLOCK_SIZE - 1))
+};
 
 #define randomize_buffers(buf0, buf1)                      \
     do {                                                   \
@@ -51,71 +56,64 @@
     } while (0)
 
 
-void checkasm_check_hpeldsp(void)
+static void check_cavs_qpeldsp(void)
 {
     DECLARE_ALIGNED(MAX_BLOCK_SIZE, uint8_t, srcbuf0)[INPUT_BUF_SIZE];
     DECLARE_ALIGNED(MAX_BLOCK_SIZE, uint8_t, srcbuf1)[INPUT_BUF_SIZE];
     DECLARE_ALIGNED(MAX_BLOCK_SIZE, uint8_t, dstbuf0)[BUF_SIZE];
     DECLARE_ALIGNED(MAX_BLOCK_SIZE, uint8_t, dstbuf1)[BUF_SIZE];
-    HpelDSPContext hdsp;
+    CAVSDSPContext cavsdsp;
     static const struct {
         const char *name;
         size_t offset;
-        unsigned nb_blocksizes;
     } tests[] = {
-#define TEST(NAME, NB) { .name = #NAME, .offset = offsetof(HpelDSPContext, NAME), .nb_blocksizes = NB }
-        TEST(put_pixels_tab, 4),
-        TEST(avg_pixels_tab, 4),
-        TEST(put_no_rnd_pixels_tab, 2), // put_no_rnd_pixels_tab only has two usable blocksizes
-        TEST(avg_no_rnd_pixels_tab, 1),
+#define TEST(NAME) { .name = #NAME, .offset = offsetof(CAVSDSPContext, NAME) }
+        TEST(put_cavs_qpel_pixels_tab),
+        TEST(avg_cavs_qpel_pixels_tab),
     };
-    declare_func_emms(AV_CPU_FLAG_MMX | AV_CPU_FLAG_MMXEXT, void, uint8_t *dst, const uint8_t *src, ptrdiff_t stride, int h);
+    declare_func_emms(AV_CPU_FLAG_MMX | AV_CPU_FLAG_MMXEXT, void, uint8_t *dst, const uint8_t *src, ptrdiff_t stride);
 
-    ff_hpeldsp_init(&hdsp, AV_CODEC_FLAG_BITEXACT);
+    ff_cavsdsp_init(&cavsdsp);
 
     for (size_t i = 0; i < FF_ARRAY_ELEMS(tests); ++i) {
-        op_pixels_func (*func_tab)[4] = (op_pixels_func (*)[4])((char*)&hdsp + tests[i].offset);
-        for (unsigned j = 0; j < tests[i].nb_blocksizes; ++j) {
+        qpel_mc_func (*func_tab)[16] = (qpel_mc_func (*)[16])((char*)&cavsdsp + tests[i].offset);
+        for (unsigned j = 0; j < 2; ++j) {
             const unsigned blocksize = MAX_BLOCK_SIZE >> j;
-            // h must always be a multiple of four, except when width is two or four.
-            const unsigned h_mult = blocksize <= 4 ? 2 : 4;
 
-            for (unsigned dxy = 0; dxy < 4; ++dxy) {
+            for (unsigned dxy = 0; dxy < 16; ++dxy) {
                 if (check_func(func_tab[j][dxy], "%s[%u][%u]", tests[i].name, j, dxy)) {
                     // Don't always use output that is 16-aligned.
                     size_t dst_offset = (rnd() % (MAX_BLOCK_SIZE / blocksize)) * blocksize;
-                    size_t src_offset = rnd() % MAX_BLOCK_SIZE;
                     ptrdiff_t stride  = (rnd() % (MAX_STRIDE / blocksize) + 1) * blocksize;
+                    size_t src_offset = 2 + 2 * stride + rnd() % MAX_BLOCK_SIZE;
                     const uint8_t *src0 = srcbuf0 + src_offset, *src1 = srcbuf1 + src_offset;
                     uint8_t *dst0 = dstbuf0 + dst_offset, *dst1 = dstbuf1 + dst_offset;
 
-                    // Always use the same height for each test, so that comparisons of benchmarks
-                    // from different instruction sets are meaningful.
-                    static int saved_heights[FF_ARRAY_ELEMS(tests)][4][4];
-                    int h = saved_heights[i][j][dxy];
-                    if (!h)
-                        saved_heights[i][j][dxy] = h = (rnd() % (MAX_HEIGHT / h_mult) + 1) * h_mult;
-
                     if (rnd() & 1) {
                         // Flip stride.
-                        dst1  += (h - 1) * stride;
-                        dst0  += (h - 1) * stride;
-                        // Due to interpolation potentially h + 1 lines are read
-                        // from src, hence h * stride.
-                        src0  += h * stride;
-                        src1  += h * stride;
+                        dst1  += (blocksize - 1) * stride;
+                        dst0  += (blocksize - 1) * stride;
+                        // We need two lines above src and three lines below the block,
+                        // hence blocksize * stride.
+                        src0  += blocksize * stride;
+                        src1  += blocksize * stride;
                         stride = -stride;
                     }
 
                     randomize_buffers(srcbuf0, srcbuf1);
                     randomize_buffers(dstbuf0, dstbuf1);
-                    call_ref(dst0, src0, stride, h);
-                    call_new(dst1, src1, stride, h);
+                    call_ref(dst0, src0, stride);
+                    call_new(dst1, src1, stride);
                     if (memcmp(srcbuf0, srcbuf1, sizeof(srcbuf0)) || memcmp(dstbuf0, dstbuf1, sizeof(dstbuf0)))
                         fail();
-                    bench_new(dst0, src0, stride, h);
+                    bench_new(dst0, src0, stride);
                 }
             }
         }
     }
+}
+
+void checkasm_check_cavsdsp(void)
+{
+    check_cavs_qpeldsp();
 }

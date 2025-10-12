@@ -340,6 +340,8 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
     av_log(s->avctx, AV_LOG_DEBUG, "sof0: picture: %dx%d\n", width, height);
     if (av_image_check_size(width, height, 0, s->avctx) < 0)
         return AVERROR_INVALIDDATA;
+
+    // A valid frame requires at least 1 bit for DC + 1 bit for AC for each 8x8 block.
     if (s->buf_size && (width + 7) / 8 * ((height + 7) / 8) > s->buf_size * 4LL)
         return AVERROR_INVALIDDATA;
 
@@ -852,9 +854,9 @@ static int decode_block(MJpegDecodeContext *s, int16_t *block, int component,
         i += ((unsigned)code) >> 4;
             code &= 0xf;
         if (code) {
-            if (code > MIN_CACHE_BITS - 16)
-                UPDATE_CACHE(re, &s->gb);
-
+            // GET_VLC updates the cache if parsing reaches the second stage.
+            // So we have at least MIN_CACHE_BITS - 9 > 15 bits left here
+            // and don't need to refill the cache.
             {
                 int cache = GET_CACHE(re, &s->gb);
                 int sign  = (~cache) >> 31;
@@ -916,8 +918,6 @@ static int decode_block_progressive(MJpegDecodeContext *s, int16_t *block,
             code &= 0xF;
             if (code) {
                 i += run;
-                if (code > MIN_CACHE_BITS - 16)
-                    UPDATE_CACHE(re, &s->gb);
 
                 {
                     int cache = GET_CACHE(re, &s->gb);
@@ -948,7 +948,8 @@ static int decode_block_progressive(MJpegDecodeContext *s, int16_t *block,
                 } else {
                     val = (1 << run);
                     if (run) {
-                        UPDATE_CACHE(re, &s->gb);
+                        // Given that GET_VLC reloads internally, we always
+                        // have at least 16 bits in the cache here.
                         val += NEG_USR32(GET_CACHE(re, &s->gb), run);
                         LAST_SKIP_BITS(re, &s->gb, run);
                     }
@@ -1010,7 +1011,6 @@ static int decode_block_refinement(MJpegDecodeContext *s, int16_t *block,
 
             if (code & 0xF) {
                 run = ((unsigned) code) >> 4;
-                UPDATE_CACHE(re, &s->gb);
                 val = SHOW_UBITS(re, &s->gb, 1);
                 LAST_SKIP_BITS(re, &s->gb, 1);
                 ZERO_RUN;
@@ -1031,7 +1031,8 @@ static int decode_block_refinement(MJpegDecodeContext *s, int16_t *block,
                     val = run;
                     run = (1 << run);
                     if (val) {
-                        UPDATE_CACHE(re, &s->gb);
+                        // Given that GET_VLC reloads internally, we always
+                        // have at least 16 bits in the cache here.
                         run += SHOW_UBITS(re, &s->gb, val);
                         LAST_SKIP_BITS(re, &s->gb, val);
                     }
