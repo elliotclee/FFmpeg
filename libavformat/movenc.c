@@ -5690,8 +5690,7 @@ static int mov_write_sidx_tag(AVIOContext *pb,
 
     if (track->entry) {
         entries = 1;
-        presentation_time = track->cluster[0].dts + track->cluster[0].cts -
-                            track->start_dts - track->start_cts;
+        presentation_time = track->cluster[0].dts + track->cluster[0].cts;
         duration = track->end_pts -
                    (track->cluster[0].dts + track->cluster[0].cts);
         starts_with_SAP = track->cluster[0].flags & MOV_SYNC_SAMPLE;
@@ -5706,9 +5705,6 @@ static int mov_write_sidx_tag(AVIOContext *pb,
         if (entries <= 0)
             return 0;
         presentation_time = track->frag_info[0].time;
-        /* presentation_time <= 0 is handled by mov_add_tfra_entries() */
-        if (presentation_time > 0)
-            presentation_time -= track->start_dts + track->start_cts;
     }
 
     avio_wb32(pb, 0); /* size */
@@ -8550,6 +8546,28 @@ static int shift_data(AVFormatContext *s)
     return ff_format_shift_data(s, mov->reserved_header_pos, moov_size);
 }
 
+static void mov_write_mdat_size(AVFormatContext *s)
+{
+    MOVMuxContext *mov = s->priv_data;
+    AVIOContext *pb = s->pb;
+
+    /* Write size of mdat tag */
+    if (mov->mdat_size + 8 <= UINT32_MAX) {
+        avio_seek(pb, mov->mdat_pos, SEEK_SET);
+        avio_wb32(pb, mov->mdat_size + 8);
+        if (mov->flags & FF_MOV_FLAG_HYBRID_FRAGMENTED)
+            ffio_wfourcc(pb, "mdat"); // overwrite the original moov into a mdat
+    } else {
+        /* overwrite 'wide' placeholder atom */
+        avio_seek(pb, mov->mdat_pos - 8, SEEK_SET);
+        /* special value: real atom size will be 64 bit value after
+         * tag field */
+        avio_wb32(pb, 1);
+        ffio_wfourcc(pb, "mdat");
+        avio_wb64(pb, mov->mdat_size + 16);
+    }
+}
+
 static int mov_write_trailer(AVFormatContext *s)
 {
     MOVMuxContext *mov = s->priv_data;
@@ -8609,21 +8627,9 @@ static int mov_write_trailer(AVFormatContext *s)
 
         moov_pos = avio_tell(pb);
 
-        /* Write size of mdat tag */
-        if (mov->mdat_size + 8 <= UINT32_MAX) {
-            avio_seek(pb, mov->mdat_pos, SEEK_SET);
-            avio_wb32(pb, mov->mdat_size + 8);
-            if (mov->flags & FF_MOV_FLAG_HYBRID_FRAGMENTED)
-                ffio_wfourcc(pb, "mdat"); // overwrite the original moov into a mdat
-        } else {
-            /* overwrite 'wide' placeholder atom */
-            avio_seek(pb, mov->mdat_pos - 8, SEEK_SET);
-            /* special value: real atom size will be 64 bit value after
-             * tag field */
-            avio_wb32(pb, 1);
-            ffio_wfourcc(pb, "mdat");
-            avio_wb64(pb, mov->mdat_size + 16);
-        }
+        if (!(mov->flags & FF_MOV_FLAG_HYBRID_FRAGMENTED))
+            mov_write_mdat_size(s);
+
         avio_seek(pb, mov->reserved_moov_size > 0 ? mov->reserved_header_pos : moov_pos, SEEK_SET);
 
         if (mov->flags & FF_MOV_FLAG_FASTSTART) {
@@ -8651,6 +8657,15 @@ static int mov_write_trailer(AVFormatContext *s)
             if ((res = mov_write_moov_tag(pb, mov, s)) < 0)
                 return res;
         }
+
+        if (mov->flags & FF_MOV_FLAG_HYBRID_FRAGMENTED) {
+            // With hybrid fragmentation, only write the mdat size (hiding
+            // the original moov and all the fragments within the mdat)
+            // after we've successfully written the complete moov, to avoid
+            // risk for an unreadable file if writing the final moov fails.
+            mov_write_mdat_size(s);
+        }
+
         res = 0;
     } else {
         mov_auto_flush_fragment(s, 1);
