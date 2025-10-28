@@ -295,7 +295,7 @@ int view_specifier_parse(const char **pspec, ViewSpecifier *vs)
     return 0;
 }
 
-int parse_and_set_vsync(const char *arg, int *vsync_var, int file_idx, int st_idx, int is_global)
+int parse_and_set_vsync(const char *arg, enum VideoSyncMethod *vsync_var, int file_idx, int st_idx, int is_global)
 {
     if      (!av_strcasecmp(arg, "cfr"))         *vsync_var = VSYNC_CFR;
     else if (!av_strcasecmp(arg, "vfr"))         *vsync_var = VSYNC_VFR;
@@ -1189,7 +1189,7 @@ static int opt_filter_complex_script(void *optctx, const char *opt, const char *
     char *graph_desc;
     int ret;
 
-    graph_desc = file_read(arg);
+    graph_desc = read_file_to_string(arg);
     if (!graph_desc)
         return AVERROR(EINVAL);
 

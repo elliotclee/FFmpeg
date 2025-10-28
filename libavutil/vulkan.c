@@ -1534,8 +1534,8 @@ int ff_vk_mt_is_np_rgb(enum AVPixelFormat pix_fmt)
         pix_fmt == AV_PIX_FMT_RGBA64 || pix_fmt == AV_PIX_FMT_RGB565 ||
         pix_fmt == AV_PIX_FMT_BGR565 || pix_fmt == AV_PIX_FMT_BGR0   ||
         pix_fmt == AV_PIX_FMT_0BGR   || pix_fmt == AV_PIX_FMT_RGB0   ||
-        pix_fmt == AV_PIX_FMT_GBRP10  || pix_fmt == AV_PIX_FMT_GBRP12 ||
-        pix_fmt == AV_PIX_FMT_GBRP14  || pix_fmt == AV_PIX_FMT_GBRP16 ||
+        pix_fmt == AV_PIX_FMT_GBRP10MSB  || pix_fmt == AV_PIX_FMT_GBRP12MSB ||
+        pix_fmt == AV_PIX_FMT_GBRP16 ||
         pix_fmt == AV_PIX_FMT_GBRAP   || pix_fmt == AV_PIX_FMT_GBRAP10 ||
         pix_fmt == AV_PIX_FMT_GBRAP12 || pix_fmt == AV_PIX_FMT_GBRAP14 ||
         pix_fmt == AV_PIX_FMT_GBRAP16 || pix_fmt == AV_PIX_FMT_GBRAP32 ||
@@ -1557,9 +1557,8 @@ void ff_vk_set_perm(enum AVPixelFormat pix_fmt, int lut[4], int inv)
     case AV_PIX_FMT_GBRAP12:
     case AV_PIX_FMT_GBRAP14:
     case AV_PIX_FMT_GBRAP16:
-    case AV_PIX_FMT_GBRP10:
-    case AV_PIX_FMT_GBRP12:
-    case AV_PIX_FMT_GBRP14:
+    case AV_PIX_FMT_GBRP10MSB:
+    case AV_PIX_FMT_GBRP12MSB:
     case AV_PIX_FMT_GBRP16:
     case AV_PIX_FMT_GBRPF32:
     case AV_PIX_FMT_GBRAP32:
@@ -1672,34 +1671,27 @@ const char *ff_vk_shader_rep_fmt(enum AVPixelFormat pix_fmt,
         };
         return rep_tab[rep_fmt];
     };
-    case AV_PIX_FMT_GRAY10:
-    case AV_PIX_FMT_GRAY12:
-    case AV_PIX_FMT_GRAY14:
+    case AV_PIX_FMT_GRAY10MSB:
+    case AV_PIX_FMT_GRAY12MSB:
     case AV_PIX_FMT_GRAY16:
     case AV_PIX_FMT_GBRAP10:
     case AV_PIX_FMT_GBRAP12:
     case AV_PIX_FMT_GBRAP14:
     case AV_PIX_FMT_GBRAP16:
-    case AV_PIX_FMT_GBRP10:
-    case AV_PIX_FMT_GBRP12:
-    case AV_PIX_FMT_GBRP14:
+    case AV_PIX_FMT_GBRP10MSB:
+    case AV_PIX_FMT_GBRP12MSB:
     case AV_PIX_FMT_GBRP16:
-    case AV_PIX_FMT_YUV420P10:
-    case AV_PIX_FMT_YUV420P12:
+    case AV_PIX_FMT_YUV420P10MSB:
+    case AV_PIX_FMT_YUV420P12MSB:
     case AV_PIX_FMT_YUV420P16:
-    case AV_PIX_FMT_YUV422P10:
-    case AV_PIX_FMT_YUV422P12:
+    case AV_PIX_FMT_YUV422P10MSB:
+    case AV_PIX_FMT_YUV422P12MSB:
     case AV_PIX_FMT_YUV422P16:
-    case AV_PIX_FMT_YUV444P10:
-    case AV_PIX_FMT_YUV444P12:
+    case AV_PIX_FMT_YUV444P10MSB:
+    case AV_PIX_FMT_YUV444P12MSB:
     case AV_PIX_FMT_YUV444P16:
-    case AV_PIX_FMT_YUVA420P10:
     case AV_PIX_FMT_YUVA420P16:
-    case AV_PIX_FMT_YUVA422P10:
-    case AV_PIX_FMT_YUVA422P12:
     case AV_PIX_FMT_YUVA422P16:
-    case AV_PIX_FMT_YUVA444P10:
-    case AV_PIX_FMT_YUVA444P12:
     case AV_PIX_FMT_YUVA444P16:
     case AV_PIX_FMT_BAYER_RGGB16: {
         const char *rep_tab[] = {

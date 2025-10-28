@@ -242,9 +242,8 @@ static int run_rct_search(AVCodecContext *avctx, FFVkExecContext *exec,
         .micro_version = f->micro_version,
     };
 
-    if (avctx->sw_pix_fmt == AV_PIX_FMT_GBRP10 ||
-        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP12 ||
-        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP14)
+    if (avctx->sw_pix_fmt == AV_PIX_FMT_GBRP10MSB ||
+        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP12MSB)
         memcpy(pd.fmt_lut, (int [4]) { 2, 1, 0, 3 }, 4*sizeof(int));
     else
         ff_vk_set_perm(avctx->sw_pix_fmt, pd.fmt_lut, 1);
@@ -503,9 +502,8 @@ static int vulkan_encode_ffv1_submit_frame(AVCodecContext *avctx,
     };
 
     /* For some reason the C FFv1 encoder/decoder treats these differently */
-    if (avctx->sw_pix_fmt == AV_PIX_FMT_GBRP10 ||
-        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP12 ||
-        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP14)
+    if (avctx->sw_pix_fmt == AV_PIX_FMT_GBRP10MSB ||
+        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP12MSB)
         memcpy(pd.fmt_lut, (int [4]) { 2, 1, 0, 3 }, 4*sizeof(int));
     else
         ff_vk_set_perm(avctx->sw_pix_fmt, pd.fmt_lut, 1);
@@ -1291,7 +1289,8 @@ static int init_encode_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
     uint8_t *spv_data;
     size_t spv_len;
     void *spv_opaque = NULL;
-    int use_cached_reader = fv->ctx.ac != AC_GOLOMB_RICE;
+    int use_cached_reader = fv->ctx.ac != AC_GOLOMB_RICE &&
+                            fv->s.driver_props.driverID == VK_DRIVER_ID_MESA_RADV;
 
     RET(ff_vk_shader_init(&fv->s, shd, "ffv1_enc",
                           VK_SHADER_STAGE_COMPUTE_BIT,
