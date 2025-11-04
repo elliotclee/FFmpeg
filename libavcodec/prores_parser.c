@@ -20,6 +20,7 @@
 #include "bytestream.h"
 
 #include "avcodec.h"
+#include "parser_internal.h"
 
 static int parse(AVCodecParserContext *s,
                  AVCodecContext *avctx,
@@ -122,7 +123,7 @@ static int parse(AVCodecParserContext *s,
     return buf_size;
 }
 
-const AVCodecParser ff_prores_parser = {
-    .codec_ids    = { AV_CODEC_ID_PRORES },
-    .parser_parse = parse,
+const FFCodecParser ff_prores_parser = {
+    PARSER_CODEC_LIST(AV_CODEC_ID_PRORES),
+    .parse        = parse,
 };
