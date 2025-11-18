@@ -87,7 +87,7 @@ void main(void)
     uint chroma_shift = comp != 0 ? log2_chroma_w : 0;
     bool act = gid.x < mb_width << (4 - chroma_shift);
 
-    /* Coalesced load of DCT coeffs in shared memory, second part of inverse quantization */
+    /* Coalesced load of DCT coeffs in shared memory, inverse quantization */
     if (act) {
         /**
          * According to spec indexing an array in push constant memory with
@@ -95,9 +95,14 @@ void main(void)
          * so copy the whole matrix locally.
          */
         uint8_t[64] qmat = comp == 0 ? qmat_luma : qmat_chroma;
+
+        /* Table 15 */
+        uint8_t qidx = quant_idx[(gid.y >> 1) * mb_width + (gid.x >> 4)];
+        int qscale = qidx > 128 ? (qidx - 96) << 2 : qidx;
+
         [[unroll]] for (uint i = 0; i < 8; ++i) {
-            int v = sign_extend(int(get_px(comp, ivec2(gid.x, (gid.y << 3) | i))), 16);
-            blocks[block][i * 9 + idx] = float(v * int(qmat[(i << 3) + idx]));
+            int v = sign_extend(int(get_px(comp, ivec2(gid.x, (gid.y << 3) + i))), 16);
+            blocks[block][i * 9 + idx] = float(v * qscale * int(qmat[(i << 3) + idx]));
         }
     }
 
@@ -110,14 +115,14 @@ void main(void)
     idct(block, idx, 9);
 
     float fact = 1.0f / (1 << (12 - depth)), off = 1 << (depth - 1);
-    int maxv = (1 << depth) - 1, shift = 16 - depth;
+    int maxv = (1 << depth) - 1;
 
     /* 7.5.1 Color Component Samples. Rescale, clamp and write back to global memory */
     barrier();
     if (act) {
         [[unroll]] for (uint i = 0; i < 8; ++i) {
             float v = blocks[block][i * 9 + idx] * fact + off;
-            put_px(comp, ivec2(gid.x, (gid.y << 3) | i), clamp(int(v), 0, maxv) << shift);
+            put_px(comp, ivec2(gid.x, (gid.y << 3) + i), clamp(int(v), 0, maxv));
         }
     }
 }

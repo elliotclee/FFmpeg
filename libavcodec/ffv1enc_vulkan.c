@@ -96,9 +96,6 @@ typedef struct VulkanEncodeFFv1Context {
     /* Intermediate frame pool */
     AVBufferRef *intermediate_frames_ref;
 
-    /* Representation mode */
-    enum FFVkShaderRepFormat rep_fmt;
-
     int num_h_slices;
     int num_v_slices;
     int force_pcm;
@@ -242,8 +239,9 @@ static int run_rct_search(AVCodecContext *avctx, FFVkExecContext *exec,
         .micro_version = f->micro_version,
     };
 
-    if (avctx->sw_pix_fmt == AV_PIX_FMT_GBRP10MSB ||
-        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP12MSB)
+    if (avctx->sw_pix_fmt == AV_PIX_FMT_GBRP10 ||
+        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP12 ||
+        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP14)
         memcpy(pd.fmt_lut, (int [4]) { 2, 1, 0, 3 }, 4*sizeof(int));
     else
         ff_vk_set_perm(avctx->sw_pix_fmt, pd.fmt_lut, 1);
@@ -379,7 +377,7 @@ static int vulkan_encode_ffv1_submit_frame(AVCodecContext *avctx,
                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT));
 
     RET(ff_vk_create_imageviews(&fv->s, exec, src_views, src,
-                                fv->rep_fmt));
+                                FF_VK_REP_NATIVE));
     ff_vk_frame_barrier(&fv->s, exec, src, img_bar, &nb_img_bar,
                         VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                         VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -401,7 +399,7 @@ static int vulkan_encode_ffv1_submit_frame(AVCodecContext *avctx,
                                      VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT));
         RET(ff_vk_create_imageviews(&fv->s, exec, tmp_views,
                                     tmp,
-                                    fv->rep_fmt));
+                                    FF_VK_REP_NATIVE));
     }
 
     /* Setup shader */
@@ -502,8 +500,9 @@ static int vulkan_encode_ffv1_submit_frame(AVCodecContext *avctx,
     };
 
     /* For some reason the C FFv1 encoder/decoder treats these differently */
-    if (avctx->sw_pix_fmt == AV_PIX_FMT_GBRP10MSB ||
-        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP12MSB)
+    if (avctx->sw_pix_fmt == AV_PIX_FMT_GBRP10 ||
+        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP12 ||
+        avctx->sw_pix_fmt == AV_PIX_FMT_GBRP14)
         memcpy(pd.fmt_lut, (int [4]) { 2, 1, 0, 3 }, 4*sizeof(int));
     else
         ff_vk_set_perm(avctx->sw_pix_fmt, pd.fmt_lut, 1);
@@ -1082,7 +1081,7 @@ static int init_rct_search_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
             .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             .dimensions = 2,
             .mem_layout = ff_vk_shader_rep_fmt(fv->s.frames->sw_format,
-                                               fv->rep_fmt),
+                                               FF_VK_REP_NATIVE),
             .elems      = av_pix_fmt_count_planes(fv->s.frames->sw_format),
             .mem_quali  = "readonly",
             .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -1167,7 +1166,7 @@ static int init_setup_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
             .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             .dimensions = 2,
             .mem_layout = ff_vk_shader_rep_fmt(fv->s.frames->sw_format,
-                                               fv->rep_fmt),
+                                               FF_VK_REP_NATIVE),
             .elems      = av_pix_fmt_count_planes(fv->s.frames->sw_format),
             .mem_quali  = "readonly",
             .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -1353,7 +1352,7 @@ static int init_encode_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
             .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             .dimensions = 2,
             .mem_layout = ff_vk_shader_rep_fmt(fv->s.frames->sw_format,
-                                               fv->rep_fmt),
+                                               FF_VK_REP_NATIVE),
             .elems      = av_pix_fmt_count_planes(fv->s.frames->sw_format),
             .mem_quali  = "readonly",
             .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -1607,12 +1606,6 @@ static av_cold int vulkan_encode_ffv1_init(AVCodecContext *avctx)
     /* Detect the special RGB coding mode */
     fv->is_rgb = !(f->colorspace == 0 && avctx->sw_pix_fmt != AV_PIX_FMT_YA8) &&
                  !(avctx->sw_pix_fmt == AV_PIX_FMT_YA8);
-
-    /* bits_per_raw_sample use regular unsigned representation,
-     * but in higher bit depths, the data is casted to int16_t */
-    fv->rep_fmt = FF_VK_REP_UINT;
-    if (!fv->is_rgb && f->bits_per_raw_sample > 8)
-        fv->rep_fmt = FF_VK_REP_INT;
 
     /* Init rct search shader */
     fv->optimize_rct = fv->is_rgb && f->version >= 4 &&

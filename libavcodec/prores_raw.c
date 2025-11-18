@@ -43,7 +43,6 @@
 static av_cold int decode_init(AVCodecContext *avctx)
 {
     ProResRAWContext *s = avctx->priv_data;
-    uint8_t idct_permutation[64];
 
     avctx->bits_per_raw_sample = 12;
     avctx->color_primaries = AVCOL_PRI_UNSPECIFIED;
@@ -55,15 +54,12 @@ static av_cold int decode_init(AVCodecContext *avctx)
     ff_blockdsp_init(&s->bdsp);
     ff_proresdsp_init(&s->prodsp, avctx->bits_per_raw_sample);
 
-    ff_init_scantable_permutation(idct_permutation,
-                                  s->prodsp.idct_permutation_type);
-
-    ff_permute_scantable(s->scan, ff_prores_interlaced_scan, idct_permutation);
+    ff_permute_scantable(s->scan, ff_prores_interlaced_scan, s->prodsp.idct_permutation);
 
     return 0;
 }
 
-static int16_t get_value(GetBitContext *gb, int16_t codebook)
+static uint16_t get_value(GetBitContext *gb, int16_t codebook)
 {
     const int16_t switch_bits = codebook >> 8;
     const int16_t rice_order  = codebook & 0xf;
@@ -87,6 +83,8 @@ static int16_t get_value(GetBitContext *gb, int16_t codebook)
     }
 
     bits = exp_order + (q << 1) - switch_bits;
+    if (bits > 32)
+        return 0; // we do not return a negative error code so that we dont produce out of range values on errors
     skip_bits_long(gb, bits);
     return (b >> (32 - bits)) +
            ((switch_bits + 1) << rice_order) -
@@ -101,30 +99,30 @@ static const uint8_t align_tile_w[16] = {
 
 #define DC_CB_MAX 12
 const uint8_t ff_prores_raw_dc_cb[DC_CB_MAX + 1] = {
-    16, 33, 50, 51, 51, 51, 68, 68, 68, 68, 68, 68, 118,
+    0x010, 0x021, 0x032, 0x033, 0x033, 0x033, 0x044, 0x044, 0x044, 0x044, 0x044, 0x044, 0x076,
 };
 
 #define AC_CB_MAX 94
 const int16_t ff_prores_raw_ac_cb[AC_CB_MAX + 1] = {
-      0, 529, 273, 273, 546, 546, 546, 290, 290, 290, 563, 563,
-    563, 563, 563, 563, 563, 563, 307, 307, 580, 580, 580, 580,
-    580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580,
-    580, 580, 580, 580, 580, 580, 853, 853, 853, 853, 853, 853,
-    853, 853, 853, 853, 853, 853, 853, 853, 853, 853, 853, 853,
-    853, 853, 853, 853, 853, 853, 853, 853, 853, 853, 853, 853,
-    853, 853, 853, 853, 853, 853, 853, 853, 853, 853, 853, 853,
-    853, 853, 853, 853, 853, 853, 853, 853, 853, 853, 358
+    0x000, 0x211, 0x111, 0x111, 0x222, 0x222, 0x222, 0x122, 0x122, 0x122,
+    0x233, 0x233, 0x233, 0x233, 0x233, 0x233, 0x233, 0x233, 0x133, 0x133,
+    0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244,
+    0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244, 0x244,
+    0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355,
+    0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355,
+    0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355,
+    0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x355, 0x166,
 };
 
 #define RN_CB_MAX 27
 const int16_t ff_prores_raw_rn_cb[RN_CB_MAX + 1] = {
-    512, 256, 0, 0, 529, 529, 273, 273, 17, 17, 33, 33, 546,
-    34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 50, 50, 68,
+    0x200, 0x100, 0x000, 0x000, 0x211, 0x211, 0x111, 0x111, 0x011, 0x011, 0x021, 0x021, 0x222, 0x022,
+    0x022, 0x022, 0x022, 0x022, 0x022, 0x022, 0x022, 0x022, 0x022, 0x022, 0x022, 0x032, 0x032, 0x044
 };
 
 #define LN_CB_MAX 14
 const int16_t ff_prores_raw_ln_cb[LN_CB_MAX + 1] = {
-    256, 273, 546, 546, 290, 290, 1075, 1075, 563, 563, 563, 563, 563, 563, 51
+    0x100, 0x111, 0x222, 0x222, 0x122, 0x122, 0x433, 0x433, 0x233, 0x233, 0x233, 0x233, 0x233, 0x233, 0x033,
 };
 
 static int decode_comp(AVCodecContext *avctx, TileContext *tile,
@@ -149,7 +147,7 @@ static int decode_comp(AVCodecContext *avctx, TileContext *tile,
     int16_t dc_add = 0;
     int16_t dc_codebook;
 
-    int16_t ac, rn, ln;
+    uint16_t ac, rn, ln;
     int16_t ac_codebook = 49;
     int16_t rn_codebook = 0;
     int16_t ln_codebook = 66;
@@ -329,7 +327,7 @@ static int decode_frame(AVCodecContext *avctx,
                         AVFrame *frame, int *got_frame_ptr,
                         AVPacket *avpkt)
 {
-    int ret;
+    int ret, dimensions_changed = 0;
     ProResRAWContext *s = avctx->priv_data;
     DECLARE_ALIGNED(32, uint8_t, qmat)[64];
     memset(qmat, 1, 64);
@@ -390,13 +388,14 @@ static int decode_frame(AVCodecContext *avctx,
                avctx->width, avctx->height, w, h);
         if ((ret = ff_set_dimensions(avctx, w, h)) < 0)
             return ret;
+        dimensions_changed = 1;
     }
 
     avctx->coded_width  = FFALIGN(w, 16);
     avctx->coded_height = FFALIGN(h, 16);
 
     enum AVPixelFormat pix_fmt = AV_PIX_FMT_BAYER_RGGB16;
-    if (pix_fmt != s->pix_fmt) {
+    if (pix_fmt != s->pix_fmt || dimensions_changed) {
         s->pix_fmt = pix_fmt;
 
         ret = get_pixel_format(avctx, pix_fmt);
