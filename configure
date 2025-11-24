@@ -1927,7 +1927,6 @@ EXTERNAL_LIBRARY_NONFREE_LIST="
     decklink
     libfdk_aac
     libmpeghdec
-    libtls
 "
 
 EXTERNAL_LIBRARY_VERSION3_LIST="
@@ -2014,6 +2013,7 @@ EXTERNAL_LIBRARY_LIST="
     libtensorflow
     libtesseract
     libtheora
+    libtls
     libtorch
     libtwolame
     libuavs3d
@@ -7121,8 +7121,8 @@ enabled libdav1d          && require_pkg_config libdav1d "dav1d >= 1.0.0" "dav1d
 enabled libdavs2          && require_pkg_config libdavs2 "davs2 >= 1.6.0" davs2.h davs2_decoder_open
 enabled libdc1394         && require_pkg_config libdc1394 libdc1394-2 dc1394/dc1394.h dc1394_new
 enabled libdrm            && check_pkg_config libdrm libdrm xf86drm.h drmGetVersion
-enabled libdvdnav         && require_pkg_config libdvdnav "dvdnav >= 6.1.1" dvdnav/dvdnav.h dvdnav_open2
-enabled libdvdread        && require_pkg_config libdvdread "dvdread >= 6.1.2" dvdread/dvd_reader.h DVDOpen2
+enabled libdvdnav         && require_pkg_config libdvdnav "dvdnav >= 6.1.0" dvdnav/dvdnav.h dvdnav_open2
+enabled libdvdread        && require_pkg_config libdvdread "dvdread >= 6.1.1" dvdread/dvd_reader.h DVDOpen2
 enabled libfdk_aac        && { check_pkg_config libfdk_aac fdk-aac "fdk-aac/aacenc_lib.h" aacEncOpen ||
                                { require libfdk_aac fdk-aac/aacenc_lib.h aacEncOpen -lfdk-aac &&
                                  warn "using libfdk without pkg-config"; } }
@@ -7244,7 +7244,8 @@ enabled libsvtav1         && require_pkg_config libsvtav1 "SvtAv1Enc >= 0.9.0" E
 enabled libtensorflow     && require libtensorflow tensorflow/c/c_api.h TF_Version -ltensorflow
 enabled libtesseract      && require_pkg_config libtesseract tesseract tesseract/capi.h TessBaseAPICreate
 enabled libtheora         && require libtheora theora/theoraenc.h th_info_init -ltheoraenc -ltheoradec -logg
-enabled libtls            && require_pkg_config libtls libtls tls.h tls_configure
+enabled libtls            && require_pkg_config libtls libtls tls.h tls_configure &&
+                             { enabled gpl && ! enabled nonfree && die "ERROR: LibreSSL is incompatible with the gpl"; }
 enabled libtorch          && check_cxxflags -std=c++17 && require_cxx libtorch torch/torch.h "torch::Tensor" -ltorch -lc10 -ltorch_cpu -lstdc++ -lpthread
 enabled libtwolame        && require libtwolame twolame.h twolame_init -ltwolame &&
                              { check_lib libtwolame twolame.h twolame_encode_buffer_float32_interleaved -ltwolame ||
@@ -7311,7 +7312,8 @@ enabled mbedtls           && { check_pkg_config mbedtls mbedtls mbedtls/x509_crt
                                check_pkg_config mbedtls mbedtls mbedtls/ssl.h mbedtls_ssl_init ||
                                check_lib mbedtls mbedtls/ssl.h mbedtls_ssl_init -lmbedtls -lmbedx509 -lmbedcrypto ||
                                die "ERROR: mbedTLS not found"; }
-enabled mediacodec        && { enabled jni || die "ERROR: mediacodec requires --enable-jni"; }
+enabled mediacodec        && { enabled jni || die "ERROR: mediacodec requires --enable-jni"; } &&
+                               add_compat android/binder.o
 enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host ||
                                { ! enabled cross_compile &&
                                  add_cflags -isystem/opt/vc/include/ -isystem/opt/vc/include/interface/vmcs_host/linux -isystem/opt/vc/include/interface/vcos/pthreads -fgnu89-inline &&

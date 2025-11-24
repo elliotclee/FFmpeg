@@ -567,14 +567,14 @@ OBJS-$(CONFIG_MPC7_DECODER)            += mpc7.o mpc.o
 OBJS-$(CONFIG_MPC8_DECODER)            += mpc8.o mpc.o
 OBJS-$(CONFIG_MPEGVIDEO_DECODER)       += mpeg12dec.o mpeg12.o mpeg12data.o
 OBJS-$(CONFIG_MPEG1VIDEO_DECODER)      += mpeg12dec.o mpeg12.o mpeg12data.o
-OBJS-$(CONFIG_MPEG1VIDEO_ENCODER)      += mpeg12enc.o mpeg12.o
+OBJS-$(CONFIG_MPEG1VIDEO_ENCODER)      += mpeg12enc.o
 OBJS-$(CONFIG_MPEG1_CUVID_DECODER)     += cuviddec.o
 OBJS-$(CONFIG_MPEG1_V4L2M2M_DECODER)   += v4l2_m2m_dec.o
 OBJS-$(CONFIG_MPEG2_MMAL_DECODER)      += mmaldec.o
 OBJS-$(CONFIG_MPEG2_QSV_DECODER)       += qsvdec.o
 OBJS-$(CONFIG_MPEG2_QSV_ENCODER)       += qsvenc_mpeg2.o
 OBJS-$(CONFIG_MPEG2VIDEO_DECODER)      += mpeg12dec.o mpeg12.o mpeg12data.o
-OBJS-$(CONFIG_MPEG2VIDEO_ENCODER)      += mpeg12enc.o mpeg12.o
+OBJS-$(CONFIG_MPEG2VIDEO_ENCODER)      += mpeg12enc.o
 OBJS-$(CONFIG_MPEG2_CUVID_DECODER)     += cuviddec.o
 OBJS-$(CONFIG_MPEG2_MEDIACODEC_DECODER) += mediacodecdec.o
 OBJS-$(CONFIG_MPEG2_VAAPI_ENCODER)     += vaapi_encode_mpeg2.o
@@ -1276,8 +1276,7 @@ OBJS-$(CONFIG_MPEG4VIDEO_PARSER)       += mpeg4video_parser.o h263.o \
                                           mpeg4videodec.o mpeg4video.o \
                                           ituh263dec.o h263data.o
 OBJS-$(CONFIG_MPEGAUDIO_PARSER)        += mpegaudio_parser.o
-OBJS-$(CONFIG_MPEGVIDEO_PARSER)        += mpegvideo_parser.o    \
-                                          mpeg12.o mpeg12data.o
+OBJS-$(CONFIG_MPEGVIDEO_PARSER)        += mpegvideo_parser.o mpeg12data.o
 OBJS-$(CONFIG_OPUS_PARSER)             += vorbis_data.o
 OBJS-$(CONFIG_PNG_PARSER)              += png_parser.o
 OBJS-$(CONFIG_PNM_PARSER)              += pnm_parser.o pnm.o
