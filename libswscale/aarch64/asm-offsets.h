@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2025 Arpad Panyik <Arpad.Panyik@arm.com>
+ *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -16,23 +18,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-void main(void)
-{
-    uvec3 gid = gl_GlobalInvocationID;
-#ifndef INTERLACED
-    ivec2 pos = ivec2(gid);
-#else
-    ivec2 pos = ivec2(gid.x, (gid.y << 1) + bottom_field);
-#endif
+#ifndef SWSCALE_AARCH64_ASM_OFFSETS_H
+#define SWSCALE_AARCH64_ASM_OFFSETS_H
 
-    /* Clear luma plane */
-    imageStore(dst[0], pos, uvec4(0));
+/* SwsLuts */
+#define SL_IN  0x00
+#define SL_OUT 0x08
 
-    /* Clear chroma plane */
-    if (gid.x < mb_width << (4 - log2_chroma_w)) {
-        imageStore(dst[1], pos, uvec4(0));
-        imageStore(dst[2], pos, uvec4(0));
-    }
+/* SwsColorXform */
+#define SCX_GAMMA     0x00
+#define SCX_MAT       0x10
+#define SCX_GAMMA_IN  (SCX_GAMMA + SL_IN)
+#define SCX_GAMMA_OUT (SCX_GAMMA + SL_OUT)
+#define SCX_MAT_00    SCX_MAT
+#define SCX_MAT_22    (SCX_MAT + 8 * 2)
 
-    /* Alpha plane doesn't need a clear because it is not sparsely encoded */
-}
+#endif /* SWSCALE_AARCH64_ASM_OFFSETS_H */
