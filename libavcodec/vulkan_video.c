@@ -349,17 +349,21 @@ av_cold void ff_vk_video_common_uninit(FFVulkanContext *s,
 
     av_freep(&common->mem);
 
-    if (common->layered_view)
+    if (common->layered_view) {
         vk->DestroyImageView(s->hwctx->act_dev, common->layered_view,
                              s->hwctx->alloc);
+        common->layered_view = VK_NULL_HANDLE;
+    }
 
     av_frame_free(&common->layered_frame);
 
     av_buffer_unref(&common->dpb_hwfc_ref);
 
-    if (common->yuv_sampler)
+    if (common->yuv_sampler) {
         vk->DestroySamplerYcbcrConversion(s->hwctx->act_dev, common->yuv_sampler,
                                           s->hwctx->alloc);
+        common->yuv_sampler = VK_NULL_HANDLE;
+    }
 }
 
 av_cold int ff_vk_video_common_init(AVCodecContext *avctx, FFVulkanContext *s,
@@ -394,8 +398,10 @@ av_cold int ff_vk_video_common_init(AVCodecContext *avctx, FFVulkanContext *s,
     /* Create session */
     ret = vk->CreateVideoSessionKHR(s->hwctx->act_dev, session_create,
                                     s->hwctx->alloc, &common->session);
-    if (ret != VK_SUCCESS)
-        return AVERROR_EXTERNAL;
+    if (ret != VK_SUCCESS) {
+        err = AVERROR_EXTERNAL;
+        goto fail;
+    }
 
     /* Get memory requirements */
     ret = vk->GetVideoSessionMemoryRequirementsKHR(s->hwctx->act_dev,

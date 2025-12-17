@@ -405,7 +405,7 @@ static int init_shader(AVCodecContext *avctx, FFVulkanContext *s,
                           local_size >> 16 & 0xff, local_size >> 8 & 0xff, local_size >> 0 & 0xff,
                           0));
 
-    av_bprintf(&shd->src, "#define GET_BITS_SMEM\n");
+    av_bprintf(&shd->src, "#define GET_BITS_SMEM %d\n", 4);
 
     if (interlaced)
         av_bprintf(&shd->src, "#define INTERLACED\n");
@@ -566,8 +566,6 @@ const FFHWAccel ff_prores_vulkan_hwaccel = {
     .frame_priv_data_size  = sizeof(ProresVulkanDecodePicture),
     .init                  = &vk_decode_prores_init,
     .update_thread_context = &ff_vk_update_thread_context,
-    .decode_params         = &ff_vk_params_invalidate,
-    .flush                 = &ff_vk_decode_flush,
     .uninit                = &ff_vk_decode_uninit,
     .frame_params          = &ff_vk_frame_params,
     .priv_data_size        = sizeof(FFVulkanDecodeContext),

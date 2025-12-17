@@ -132,6 +132,7 @@ typedef struct SwsConvertOp {
 typedef struct SwsDitherOp {
     AVRational *matrix; /* tightly packed dither matrix (refstruct) */
     int size_log2; /* size (in bits) of the dither matrix */
+    uint8_t y_offset[4]; /* row offset for each component */
 } SwsDitherOp;
 
 typedef struct SwsLinearOp {
@@ -209,8 +210,8 @@ typedef struct SwsOpList {
     SwsOp *ops;
     int num_ops;
 
-    /* Purely informative metadata associated with this operation list */
-    SwsFormat src, dst;
+    /* Metadata associated with this operation list */
+    SwsFormat src, dst; /* if set; may inform the optimizer about e.g value ranges */
 } SwsOpList;
 
 SwsOpList *ff_sws_op_list_alloc(void);
