@@ -395,6 +395,7 @@ OBJS-$(CONFIG_MCDEINT_FILTER)                += vf_mcdeint.o
 OBJS-$(CONFIG_MEDIAN_FILTER)                 += vf_median.o
 OBJS-$(CONFIG_MERGEPLANES_FILTER)            += vf_mergeplanes.o framesync.o
 OBJS-$(CONFIG_MESTIMATE_FILTER)              += vf_mestimate.o motion_estimation.o
+OBJS-$(CONFIG_MESTIMATE_D3D12_FILTER)        += vf_mestimate_d3d12.o
 OBJS-$(CONFIG_METADATA_FILTER)               += f_metadata.o
 OBJS-$(CONFIG_MIDEQUALIZER_FILTER)           += vf_midequalizer.o framesync.o
 OBJS-$(CONFIG_MINTERPOLATE_FILTER)           += vf_minterpolate.o motion_estimation.o
@@ -631,6 +632,7 @@ OBJS-$(CONFIG_SMPTEHDBARS_FILTER)            += vsrc_testsrc.o
 OBJS-$(CONFIG_COLOR_VULKAN_FILTER)           += vsrc_testsrc_vulkan.o vulkan.o vulkan_filter.o
 OBJS-$(CONFIG_TESTSRC_FILTER)                += vsrc_testsrc.o
 OBJS-$(CONFIG_TESTSRC2_FILTER)               += vsrc_testsrc.o
+OBJS-$(CONFIG_AMF_CAPTURE_FILTER)            += vsrc_amf.o
 OBJS-$(CONFIG_YUVTESTSRC_FILTER)             += vsrc_testsrc.o
 OBJS-$(CONFIG_ZONEPLATE_FILTER)              += vsrc_testsrc.o
 
@@ -690,8 +692,7 @@ TOOLS-$(CONFIG_LIBZMQ) += zmqsend
 
 clean::
 	$(RM) $(CLEANSUFFIXES:%=libavfilter/dnn/%) $(CLEANSUFFIXES:%=libavfilter/opencl/%) \
-              $(CLEANSUFFIXES:%=libavfilter/metal/%) \
-              $(CLEANSUFFIXES:%=libavfilter/vulkan/%)
+              $(CLEANSUFFIXES:%=libavfilter/metal/%)
 
 OPENCL = $(subst $(SRC_PATH)/,,$(wildcard $(SRC_PATH)/libavfilter/opencl/*.cl))
 .SECONDARY: $(OPENCL:.cl=.c)

@@ -16,6 +16,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+
+// Prevent the `dllimport` attribute in the functions declared by Cairo when
+// the test is built on a Windows machine.
+//
+// This is needed to avoid the "redeclared without dllimport attribute after
+// being referenced with dll linkage" warnings on every function redefined by
+// the `MOCK_FN_n` macros below.
+#define CAIRO_WIN32_STATIC_BUILD
+
 #include <cairo.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -269,7 +278,7 @@ static void check_script(int is_file, const char* source) {
     state.metadata = metadata;
     state.cairo_ctx = &cairo_ctx;
 
-    ret = vgs_eval(&state, &program);
+    ret = vgs_eval(&state, &program, 0);
     vgs_eval_state_free(&state);
 
     if (ret != 0)

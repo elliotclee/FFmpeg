@@ -1219,7 +1219,7 @@ ff_jpeg2000_decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c
     uint8_t *block_states = NULL;
 
     int32_t n, val;             // Post-processing
-    const uint32_t mask  = UINT32_MAX >> (M_b + 1); // bit mask for ROI detection
+    const uint32_t mask  = (UINT32_MAX >> M_b) >> 1; // bit mask for ROI detection
 
     uint8_t num_rempass;
 
@@ -1262,6 +1262,11 @@ ff_jpeg2000_decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c
     S_blk = p0 + cblk->zbp;
     cblk->zbp = S_blk - 1;
     pLSB  = 30 - S_blk;
+
+    if (pLSB <= 1 || pLSB >= 31) {
+        avpriv_request_sample(s->avctx, "pLSB %d", pLSB);
+        return AVERROR_PATCHWELCOME;
+    }
 
     Scup = (Dcup[Lcup - 1] << 4) + (Dcup[Lcup - 2] & 0x0F);
 

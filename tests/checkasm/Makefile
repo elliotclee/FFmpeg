@@ -42,7 +42,8 @@ AVCODECOBJS-$(CONFIG_HUFFYUV_DECODER)   += huffyuvdsp.o
 AVCODECOBJS-$(CONFIG_JPEG2000_DECODER)  += jpeg2000dsp.o
 AVCODECOBJS-$(CONFIG_OPUS_DECODER)      += opusdsp.o
 AVCODECOBJS-$(CONFIG_PIXBLOCKDSP)       += pixblockdsp.o
-AVCODECOBJS-$(CONFIG_HEVC_DECODER)      += hevc_add_res.o hevc_deblock.o hevc_idct.o hevc_sao.o hevc_pel.o
+AVCODECOBJS-$(CONFIG_HEVC_DECODER)      += hevc_add_res.o hevc_deblock.o hevc_dequant.o hevc_idct.o hevc_sao.o hevc_pel.o
+AVCODECOBJS-$(CONFIG_PNG_DECODER)       += png.o
 AVCODECOBJS-$(CONFIG_RV34DSP)           += rv34dsp.o
 AVCODECOBJS-$(CONFIG_RV40_DECODER)      += rv40dsp.o
 AVCODECOBJS-$(CONFIG_SVQ1_ENCODER)      += svq1enc.o
@@ -91,6 +92,7 @@ CHECKASMOBJS-$(CONFIG_SWSCALE)  += $(SWSCALEOBJS)
 # libavutil tests
 AVUTILOBJS                              += aes.o
 AVUTILOBJS                              += av_tx.o
+AVUTILOBJS                              += crc.o
 AVUTILOBJS                              += fixed_dsp.o
 AVUTILOBJS                              += float_dsp.o
 AVUTILOBJS                              += lls.o

@@ -59,6 +59,8 @@ void ff_free_stream(AVStream **pst)
     av_freep(&sti->index_entries);
     av_freep(&sti->probe_data.buf);
 
+    av_packet_free(&sti->parse_pkt);
+
     av_bsf_free(&sti->extract_extradata.bsf);
 
     if (sti->info) {
@@ -188,6 +190,7 @@ void avformat_free_context(AVFormatContext *s)
     if (s->iformat)
         ff_flush_packet_queue(s);
     av_freep(&s->url);
+    av_freep(&s->name);
     av_free(s);
 }
 

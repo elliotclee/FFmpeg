@@ -494,6 +494,11 @@ static int exif_decode_tag(void *logctx, GetByteContext *gb, int le,
     av_log(logctx, AV_LOG_DEBUG, "TIFF Tag: id: 0x%04x, type: %d, count: %u, offset: %d, "
                                  "payload: %" PRIu32 "\n", entry->id, type, count, tell, payload);
 
+    if (!type) {
+        av_log(logctx, AV_LOG_DEBUG, "Skipping invalid TIFF tag 0\n");
+        goto end;
+    }
+
     /* AV_TIFF_IFD is the largest, numerically */
     if (type > AV_TIFF_IFD || count >= INT_MAX/8U)
         return AVERROR_INVALIDDATA;
@@ -673,9 +678,7 @@ static size_t exif_get_ifd_size(const AVExifMetadata *ifd)
     for (size_t i = 0; i < ifd->count; i++) {
         const AVExifEntry *entry = &ifd->entries[i];
         if (entry->type == AV_TIFF_IFD) {
-            /* this is an extra IFD, not an entry, so we don't need to add base tag size */
-            size_t base_size = entry->id > 0xFFECu && entry->id <= 0xFFFCu ? 0 : BASE_TAG_SIZE;
-            total_size += base_size + exif_get_ifd_size(&entry->value.ifd) + entry->ifd_offset;
+            total_size += BASE_TAG_SIZE + exif_get_ifd_size(&entry->value.ifd) + entry->ifd_offset;
         } else {
             size_t payload_size = entry->count * exif_sizes[entry->type];
             total_size += BASE_TAG_SIZE + (payload_size > 4 ? payload_size : 0);
@@ -776,11 +779,10 @@ int av_exif_write(void *logctx, const AVExifMetadata *ifd, AVBufferRef **buffer,
             headsize = 0;
             break;
     }
-    buf = av_buffer_alloc(size + off + headsize);
-    if (!buf) {
-        ret = AVERROR(ENOMEM);
+
+    ret = av_buffer_realloc(&buf, size + off + headsize);
+    if (ret < 0)
         goto end;
-    }
 
     if (header_mode == AV_EXIF_EXIF00) {
         AV_WL32(buf->data, MKTAG('E','x','i','f'));
@@ -798,13 +800,15 @@ int av_exif_write(void *logctx, const AVExifMetadata *ifd, AVBufferRef **buffer,
         tput32(&pb, le, 8);
     }
 
-    int extras;
-    for (extras = 0; extras < FF_ARRAY_ELEMS(extra_ifds); extras++) {
+    int extras = 0;
+    for (int i = 0; i < FF_ARRAY_ELEMS(extra_ifds); i++) {
         AVExifEntry *extra_entry = NULL;
-        uint16_t extra_tag = 0xFFFCu - extras;
+        uint16_t extra_tag = 0xFFFCu - i;
         ret = av_exif_get_entry(logctx, (AVExifMetadata *) ifd, extra_tag, 0, &extra_entry);
-        if (ret <= 0)
+        if (ret < 0)
             break;
+        if (!ret)
+            continue;
         av_log(logctx, AV_LOG_DEBUG, "found extra IFD tag: %04x\n", extra_tag);
         if (!ifd_new) {
             ifd_new = av_exif_clone_ifd(ifd);
@@ -816,7 +820,7 @@ int av_exif_write(void *logctx, const AVExifMetadata *ifd, AVBufferRef **buffer,
         AVExifMetadata *cloned = av_exif_clone_ifd(&extra_entry->value.ifd);
         if (!cloned)
             break;
-        extra_ifds[extras] = *cloned;
+        extra_ifds[extras++] = *cloned;
         /* don't use av_exif_free here, we want to preserve internals */
         av_free(cloned);
         ret = av_exif_remove_entry(logctx, ifd_new, extra_tag, 0);
@@ -824,12 +828,16 @@ int av_exif_write(void *logctx, const AVExifMetadata *ifd, AVBufferRef **buffer,
             break;
     }
 
+    if (ret < 0) {
+        av_log(logctx, AV_LOG_ERROR, "error popping additional IFD: %s\n", av_err2str(ret));
+        goto end;
+    }
+
     next = bytestream2_tell_p(&pb);
     ret = exif_write_ifd(logctx, &pb, le, 0, ifd);
     if (ret < 0) {
-        av_buffer_unref(&buf);
         av_log(logctx, AV_LOG_ERROR, "error writing EXIF data: %s\n", av_err2str(ret));
-        return ret;
+        goto end;
     }
     next += ret;
 
@@ -840,10 +848,18 @@ int av_exif_write(void *logctx, const AVExifMetadata *ifd, AVBufferRef **buffer,
         tput32(&pb, le, next);
         bytestream2_seek_p(&pb, next, SEEK_SET);
         ret = exif_write_ifd(logctx, &pb, le, 0, &extra_ifds[i]);
-        if (ret < 0)
-            break;
+        if (ret < 0) {
+            av_log(logctx, AV_LOG_ERROR, "error writing additional IFD: %s\n", av_err2str(ret));
+            goto end;
+        }
         next += ret;
     }
+
+    /* shrink the buffer to the amount of data we actually used */
+    /* extras don't contribute the initial BASE_TAG_SIZE each */
+    ret = av_buffer_realloc(&buf, buf->size - BASE_TAG_SIZE * extras);
+    if (ret < 0)
+        goto end;
 
     *buffer = buf;
     ret = 0;
@@ -853,6 +869,8 @@ end:
     av_freep(&ifd_new);
     for (int i = 0; i < FF_ARRAY_ELEMS(extra_ifds); i++)
         av_exif_free(&extra_ifds[i]);
+    if (ret < 0)
+        av_buffer_unref(&buf);
 
     return ret;
 }

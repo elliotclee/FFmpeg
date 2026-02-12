@@ -369,6 +369,7 @@ extern const FFFilter ff_vf_mcdeint;
 extern const FFFilter ff_vf_median;
 extern const FFFilter ff_vf_mergeplanes;
 extern const FFFilter ff_vf_mestimate;
+extern const FFFilter ff_vf_mestimate_d3d12;
 extern const FFFilter ff_vf_metadata;
 extern const FFFilter ff_vf_midequalizer;
 extern const FFFilter ff_vf_minterpolate;
@@ -565,6 +566,7 @@ extern const FFFilter ff_vf_drawbox_vaapi;
 
 extern const FFFilter ff_vsrc_allrgb;
 extern const FFFilter ff_vsrc_allyuv;
+extern const FFFilter ff_vsrc_amf_capture;
 extern const FFFilter ff_vsrc_cellauto;
 extern const FFFilter ff_vsrc_color;
 extern const FFFilter ff_vsrc_color_vulkan;

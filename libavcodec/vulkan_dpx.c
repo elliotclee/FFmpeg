@@ -22,16 +22,16 @@
 #include "hwaccel_internal.h"
 
 #include "dpx.h"
-#include "libavutil/vulkan_spirv.h"
 #include "libavutil/mem.h"
 
-extern const char *ff_source_common_comp;
-extern const char *ff_source_dpx_unpack_comp;
-extern const char *ff_source_dpx_copy_comp;
+extern const unsigned char ff_dpx_unpack_comp_spv_data[];
+extern const unsigned int ff_dpx_unpack_comp_spv_len;
+
+extern const unsigned char ff_dpx_copy_comp_spv_data[];
+extern const unsigned int ff_dpx_copy_comp_spv_len;
 
 const FFVulkanDecodeDescriptor ff_vk_dec_dpx_desc = {
     .codec_id         = AV_CODEC_ID_DPX,
-    .decode_extension = FF_VK_EXT_PUSH_DESCRIPTOR,
     .queue_flags      = VK_QUEUE_COMPUTE_BIT,
 };
 
@@ -45,110 +45,14 @@ typedef struct DPXVulkanDecodeContext {
 } DPXVulkanDecodeContext;
 
 typedef struct DecodePushData {
+    int bits_per_comp;
+    int nb_comp;
+    int nb_images;
     int stride;
     int need_align;
     int padded_10bit;
+    int shift;
 } DecodePushData;
-
-static int host_upload_image(AVCodecContext *avctx,
-                             FFVulkanDecodeContext *dec, DPXDecContext *dpx,
-                             const uint8_t *src, uint32_t size)
-{
-    int err;
-    VkImage temp;
-
-    FFVulkanDecodeShared *ctx = dec->shared_ctx;
-    DPXVulkanDecodeContext *dxv = ctx->sd_ctx;
-    VkPhysicalDeviceLimits *limits = &ctx->s.props.properties.limits;
-    FFVulkanFunctions *vk = &ctx->s.vkfn;
-
-    DPXVulkanDecodePicture *pp = dpx->hwaccel_picture_private;
-    FFVulkanDecodePicture *vp = &pp->vp;
-
-    int unpack = (avctx->bits_per_raw_sample == 12 && !dpx->packing) ||
-                 avctx->bits_per_raw_sample == 10;
-    if (unpack)
-        return 0;
-
-    VkImageCreateInfo create_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = avctx->bits_per_raw_sample == 8 ? VK_FORMAT_R8_UINT :
-                  avctx->bits_per_raw_sample == 32 ? VK_FORMAT_R32_UINT :
-                                                     VK_FORMAT_R16_UINT,
-        .extent.width = dpx->frame->width*dpx->components,
-        .extent.height = dpx->frame->height,
-        .extent.depth = 1,
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .tiling = VK_IMAGE_TILING_LINEAR,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .pQueueFamilyIndices = &ctx->qf[0].idx,
-        .queueFamilyIndexCount = 1,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
-
-    if (create_info.extent.width >= limits->maxImageDimension2D ||
-        create_info.extent.height >= limits->maxImageDimension2D)
-        return 0;
-
-    vk->CreateImage(ctx->s.hwctx->act_dev, &create_info, ctx->s.hwctx->alloc,
-                    &temp);
-
-    err = ff_vk_get_pooled_buffer(&ctx->s, &dxv->frame_data_pool,
-                                  &vp->slices_buf,
-                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                  NULL, size,
-                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    if (err < 0)
-        return err;
-
-    FFVkBuffer *vkb = (FFVkBuffer *)vp->slices_buf->data;
-    VkBindImageMemoryInfo bind_info = {
-        .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
-        .image = temp,
-        .memory = vkb->mem,
-    };
-    vk->BindImageMemory2(ctx->s.hwctx->act_dev, 1, &bind_info);
-
-    VkHostImageLayoutTransitionInfo layout_change = {
-        .sType = VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO,
-        .image = temp,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .subresourceRange.layerCount = 1,
-        .subresourceRange.levelCount = 1,
-    };
-    vk->TransitionImageLayoutEXT(ctx->s.hwctx->act_dev, 1, &layout_change);
-
-    VkMemoryToImageCopy copy_region = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY,
-        .pHostPointer = src,
-        .imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .imageSubresource.layerCount = 1,
-        .imageExtent = (VkExtent3D){ dpx->frame->width*dpx->components,
-                                     dpx->frame->height,
-                                     1 },
-    };
-    VkCopyMemoryToImageInfo copy_info = {
-        .sType = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO,
-        .flags = VK_HOST_IMAGE_COPY_MEMCPY_EXT,
-        .dstImage = temp,
-        .dstImageLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .regionCount = 1,
-        .pRegions = &copy_region,
-    };
-    vk->CopyMemoryToImageEXT(ctx->s.hwctx->act_dev, &copy_info);
-
-    vk->DestroyImage(ctx->s.hwctx->act_dev, temp, ctx->s.hwctx->alloc);
-
-    return 0;
-}
 
 static int vk_dpx_start_frame(AVCodecContext          *avctx,
                               const AVBufferRef       *buffer_ref,
@@ -162,9 +66,6 @@ static int vk_dpx_start_frame(AVCodecContext          *avctx,
 
     DPXVulkanDecodePicture *pp = dpx->hwaccel_picture_private;
     FFVulkanDecodePicture *vp = &pp->vp;
-
-    if (ctx->s.extensions & FF_VK_EXT_HOST_IMAGE_COPY)
-        host_upload_image(avctx, dec, dpx, buffer, size);
 
     /* Host map the frame data if supported */
     if (!vp->slices_buf &&
@@ -214,6 +115,9 @@ static int vk_dpx_end_frame(AVCodecContext *avctx)
 
     DPXVulkanDecodePicture *pp = dpx->hwaccel_picture_private;
     FFVulkanDecodePicture *vp = &pp->vp;
+
+    int unpack = (avctx->bits_per_raw_sample == 12 && !dpx->packing) ||
+                 avctx->bits_per_raw_sample == 10;
 
     FFVkBuffer *slices_buf = (FFVkBuffer *)vp->slices_buf->data;
 
@@ -267,14 +171,31 @@ static int vk_dpx_end_frame(AVCodecContext *avctx)
                                     slices_buf,
                                     0, slices_buf->size,
                                     VK_FORMAT_UNDEFINED);
+    if (!unpack) {
+        ff_vk_shader_update_desc_buffer(&ctx->s, exec, shd,
+                                        0, 2, 0,
+                                        slices_buf,
+                                        0, slices_buf->size,
+                                        VK_FORMAT_UNDEFINED);
+        ff_vk_shader_update_desc_buffer(&ctx->s, exec, shd,
+                                        0, 3, 0,
+                                        slices_buf,
+                                        0, slices_buf->size,
+                                        VK_FORMAT_UNDEFINED);
+    }
 
     ff_vk_exec_bind_shader(&ctx->s, exec, shd);
 
     /* Update push data */
     DecodePushData pd = (DecodePushData) {
+        .bits_per_comp = avctx->bits_per_raw_sample,
+        .nb_comp = dpx->components,
+        .nb_images = ff_vk_count_images(vkf),
         .stride = dpx->stride,
         .need_align = dpx->need_align,
         .padded_10bit = !dpx->unpadded_10bit,
+        .shift = FFALIGN(avctx->bits_per_raw_sample, 8) -
+                 avctx->bits_per_raw_sample,
     };
 
     ff_vk_shader_update_push_const(&ctx->s, exec, shd,
@@ -295,92 +216,65 @@ fail:
 }
 
 static int init_shader(AVCodecContext *avctx, FFVulkanContext *s,
-                       FFVkExecPool *pool, FFVkSPIRVCompiler *spv,
-                       FFVulkanShader *shd, int bits)
+                       FFVkExecPool *pool, FFVulkanShader *shd, int bits)
 {
     int err;
     DPXDecContext *dpx = avctx->priv_data;
-    FFVulkanDescriptorSetBinding *desc_set;
     AVHWFramesContext *dec_frames_ctx;
     dec_frames_ctx = (AVHWFramesContext *)avctx->hw_frames_ctx->data;
-    int planes = av_pix_fmt_count_planes(dec_frames_ctx->sw_format);
-
-    uint8_t *spv_data;
-    size_t spv_len;
-    void *spv_opaque = NULL;
-
-    RET(ff_vk_shader_init(s, shd, "dpx",
-                          VK_SHADER_STAGE_COMPUTE_BIT,
-                          (const char *[]) { "GL_EXT_buffer_reference",
-                                             "GL_EXT_buffer_reference2" }, 2,
-                          512, 1, 1,
-                          0));
-
-    /* Common codec header */
-    GLSLD(ff_source_common_comp);
-
-    GLSLC(0, layout(push_constant, scalar) uniform pushConstants {            );
-    GLSLC(1,     int stride;                                                  );
-    GLSLC(1,     int need_align;                                              );
-    GLSLC(1,     int padded_10bit;                                            );
-    GLSLC(0, };                                                               );
-    GLSLC(0,                                                                  );
-    ff_vk_shader_add_push_const(shd, 0, sizeof(DecodePushData),
-                                VK_SHADER_STAGE_COMPUTE_BIT);
 
     int unpack = (avctx->bits_per_raw_sample == 12 && !dpx->packing) ||
                  avctx->bits_per_raw_sample == 10;
 
-    desc_set = (FFVulkanDescriptorSetBinding []) {
+    SPEC_LIST_CREATE(sl, 2, 2*sizeof(uint32_t))
+    SPEC_LIST_ADD(sl, 0, 32, dpx->endian && bits > 8); /* big endian */
+    if (unpack)
+        SPEC_LIST_ADD(sl, 1, 32, bits == 10); /* packed_10bit */
+    else
+        SPEC_LIST_ADD(sl, 1, 32, FFALIGN(bits, 8)); /* type_bits */
+
+    ff_vk_shader_load(shd, VK_SHADER_STAGE_COMPUTE_BIT, sl,
+                      (uint32_t []) { 512, 1, 1 }, 0);
+
+    ff_vk_shader_add_push_const(shd, 0, sizeof(DecodePushData),
+                                VK_SHADER_STAGE_COMPUTE_BIT);
+
+    const FFVulkanDescriptorSetBinding desc_set[] = {
         {
             .name       = "dst",
             .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .dimensions = 2,
-            .mem_quali  = "writeonly",
-            .mem_layout = ff_vk_shader_rep_fmt(dec_frames_ctx->sw_format,
-                                               FF_VK_REP_NATIVE),
-            .elems      = planes,
             .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems      = av_pix_fmt_count_planes(dec_frames_ctx->sw_format),
         },
         {
             .name        = "data_buf",
             .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
             .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
-            .mem_quali   = "readonly",
-            .buf_content = (unpack || bits == 32) ? "uint32_t data[];" :
-                           bits == 8 ? "uint8_t data[];" : "uint16_t data[];",
+        },
+        {
+            .name        = "data_buf16",
+            .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
+        },
+        {
+            .name        = "data_buf32",
+            .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
         },
     };
-    RET(ff_vk_shader_add_descriptor_set(s, shd, desc_set, 2, 0, 0));
+    ff_vk_shader_add_descriptor_set(s, shd, desc_set, 2 + (2*!unpack), 0, 0);
 
-    if (dpx->endian && bits > 8)
-        GLSLC(0, #define BIG_ENDIAN                                           );
-    GLSLF(0, #define COMPONENTS (%i)                          ,dpx->components);
-    GLSLF(0, #define BITS_PER_COMP (%i)                                  ,bits);
-    GLSLF(0, #define BITS_LOG2 (%i)                             ,av_log2(bits));
-    GLSLF(0, #define NB_IMAGES (%i)                                    ,planes);
+    const unsigned char *src = ff_dpx_copy_comp_spv_data;
+    size_t src_len = ff_dpx_copy_comp_spv_len;
     if (unpack) {
-        if (bits == 10)
-            GLSLC(0, #define PACKED_10BIT                                     );
-        GLSLD(ff_source_dpx_unpack_comp);
-    } else {
-        GLSLF(0, #define SHIFT (%i)                   ,FFALIGN(bits, 8) - bits);
-        GLSLF(0, #define TYPE uint%i_t                       ,FFALIGN(bits, 8));
-        GLSLF(0, #define TYPE_VEC u%ivec4                    ,FFALIGN(bits, 8));
-        GLSLF(0, #define TYPE_REVERSE(x) (reverse%i(x)),    FFALIGN(bits, 8)/8);
-        GLSLD(ff_source_dpx_copy_comp);
+        src = ff_dpx_unpack_comp_spv_data;
+        src_len = ff_dpx_unpack_comp_spv_len;
     }
-
-    RET(spv->compile_shader(s, spv, shd, &spv_data, &spv_len, "main",
-                            &spv_opaque));
-    RET(ff_vk_shader_link(s, shd, spv_data, spv_len, "main"));
+    RET(ff_vk_shader_link(s, shd, src, src_len, "main"));
 
     RET(ff_vk_shader_register_exec(s, pool, shd));
 
 fail:
-    if (spv_opaque)
-        spv->free_shader(spv, &spv_opaque);
-
     return err;
 }
 
@@ -416,31 +310,21 @@ static int vk_decode_dpx_init(AVCodecContext *avctx)
         break;
     }
 
-    FFVkSPIRVCompiler *spv = ff_vk_spirv_init();
-    if (!spv) {
-        av_log(avctx, AV_LOG_ERROR, "Unable to initialize SPIR-V compiler!\n");
-        return AVERROR_EXTERNAL;
-    }
-
     err = ff_vk_decode_init(avctx);
     if (err < 0)
         return err;
 
     FFVulkanDecodeShared *ctx = dec->shared_ctx;
     DPXVulkanDecodeContext *dxv = ctx->sd_ctx = av_mallocz(sizeof(*dxv));
-    if (!dxv) {
-        err = AVERROR(ENOMEM);
-        goto fail;
-    }
+    if (!dxv)
+        return AVERROR(ENOMEM);
 
     ctx->sd_ctx_free = &vk_decode_dpx_uninit;
 
     RET(init_shader(avctx, &ctx->s, &ctx->exec_pool,
-                    spv, &dxv->shader, avctx->bits_per_raw_sample));
+                    &dxv->shader, avctx->bits_per_raw_sample));
 
 fail:
-    spv->uninit(&spv);
-
     return err;
 }
 

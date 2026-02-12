@@ -219,6 +219,7 @@ typedef struct LibplaceboContext {
     int color_range;
     int color_primaries;
     int color_trc;
+    int chroma_location;
     int rotation;
     int alpha_mode;
     AVDictionary *extra_opts;
@@ -451,16 +452,18 @@ static int update_settings(AVFilterContext *ctx)
         .temperature = (s->temperature - 6500.0) / 3500.0,
     };
 
-    opts->peak_detect_params = *pl_peak_detect_params(
+    opts->peak_detect_params = (struct pl_peak_detect_params) {
+        PL_PEAK_DETECT_DEFAULTS
         .smoothing_period = s->smoothing,
         .scene_threshold_low = s->scene_low,
         .scene_threshold_high = s->scene_high,
 #if PL_API_VER >= 263
         .percentile = s->percentile,
 #endif
-    );
+    };
 
-    opts->color_map_params = *pl_color_map_params(
+    opts->color_map_params = (struct pl_color_map_params) {
+        PL_COLOR_MAP_DEFAULTS
         .tone_mapping_function = get_tonemapping_func(s->tonemapping),
         .tone_mapping_param = s->tonemapping_param,
         .inverse_tone_mapping = s->inverse_tonemapping,
@@ -469,7 +472,7 @@ static int update_settings(AVFilterContext *ctx)
         .contrast_recovery = s->contrast_recovery,
         .contrast_smoothness = s->contrast_smoothness,
 #endif
-    );
+    };
 
     set_gamut_mode(&opts->color_map_params, gamut_mode);
 
@@ -484,7 +487,8 @@ static int update_settings(AVFilterContext *ctx)
         .strength = s->cone_str,
     );
 
-    opts->params = *pl_render_params(
+    opts->params = (struct pl_render_params) {
+        PL_RENDER_DEFAULTS
         .antiringing_strength = s->antiringing,
         .background_transparency = 1.0f - (float) s->fillcolor[3] / UINT8_MAX,
         .background_color = {
@@ -513,7 +517,7 @@ static int update_settings(AVFilterContext *ctx)
         .disable_builtin_scalers = s->disable_builtin,
         .force_dither = s->force_dither,
         .disable_fbos = s->disable_fbos,
-    );
+    };
 
     RET(find_scaler(ctx, &opts->params.upscaler, s->upscaler, 0));
     RET(find_scaler(ctx, &opts->params.downscaler, s->downscaler, 0));
@@ -1036,6 +1040,8 @@ static int output_frame(AVFilterContext *ctx, int64_t pts)
         out->color_trc = s->color_trc;
     if (s->color_primaries >= 0)
         out->color_primaries = s->color_primaries;
+    if (s->chroma_location >= 0)
+        out->chroma_location = s->chroma_location;
 
     /* Strip side data if no longer relevant */
     if (out->width != ref->width || out->height != ref->height)
@@ -1692,6 +1698,17 @@ static const AVOption libplacebo_options[] = {
     {"arib-std-b67",                   NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCOL_TRC_ARIB_STD_B67}, INT_MIN, INT_MAX, STATIC, .unit = "color_trc"},
     {"vlog",                           NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCOL_TRC_V_LOG},        INT_MIN, INT_MAX, STATIC, .unit = "color_trc"},
 
+    {"chroma_location", "select chroma location", OFFSET(chroma_location), AV_OPT_TYPE_INT, {.i64=-1}, -1, AVCHROMA_LOC_NB-1, DYNAMIC, .unit = "chroma_location"},
+    {"auto",  "keep the same chroma location",  0, AV_OPT_TYPE_CONST, {.i64=-1},                        0, 0, STATIC, .unit = "chroma_location"},
+    {"unspecified",                      NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCHROMA_LOC_UNSPECIFIED},  0, 0, STATIC, .unit = "chroma_location"},
+    {"unknown",                          NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCHROMA_LOC_UNSPECIFIED},  0, 0, STATIC, .unit = "chroma_location"},
+    {"left",                             NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCHROMA_LOC_LEFT},         0, 0, STATIC, .unit = "chroma_location"},
+    {"center",                           NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCHROMA_LOC_CENTER},       0, 0, STATIC, .unit = "chroma_location"},
+    {"topleft",                          NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCHROMA_LOC_TOPLEFT},      0, 0, STATIC, .unit = "chroma_location"},
+    {"top",                              NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCHROMA_LOC_TOP},          0, 0, STATIC, .unit = "chroma_location"},
+    {"bottomleft",                       NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCHROMA_LOC_BOTTOMLEFT},   0, 0, STATIC, .unit = "chroma_location"},
+    {"bottom",                           NULL,  0, AV_OPT_TYPE_CONST, {.i64=AVCHROMA_LOC_BOTTOM},       0, 0, STATIC, .unit = "chroma_location"},
+
     {"rotate", "rotate the input clockwise", OFFSET(rotation), AV_OPT_TYPE_INT, {.i64=PL_ROTATION_0}, PL_ROTATION_0, PL_ROTATION_360, DYNAMIC, .unit = "rotation"},
     {"0",                              NULL,  0, AV_OPT_TYPE_CONST, {.i64=PL_ROTATION_0},   .flags = STATIC, .unit = "rotation"},
     {"90",                             NULL,  0, AV_OPT_TYPE_CONST, {.i64=PL_ROTATION_90},  .flags = STATIC, .unit = "rotation"},
@@ -1738,9 +1755,9 @@ static const AVOption libplacebo_options[] = {
     { "temperature", "Color temperature adjustment (kelvin)", OFFSET(temperature), AV_OPT_TYPE_FLOAT, {.dbl = 6500.0}, 1667.0, 25000.0, DYNAMIC },
 
     { "peak_detect", "Enable dynamic peak detection for HDR tone-mapping", OFFSET(peakdetect), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, DYNAMIC },
-    { "smoothing_period", "Peak detection smoothing period", OFFSET(smoothing), AV_OPT_TYPE_FLOAT, {.dbl = 100.0}, 0.0, 1000.0, DYNAMIC },
-    { "scene_threshold_low", "Scene change low threshold", OFFSET(scene_low), AV_OPT_TYPE_FLOAT, {.dbl = 5.5}, -1.0, 100.0, DYNAMIC },
-    { "scene_threshold_high", "Scene change high threshold", OFFSET(scene_high), AV_OPT_TYPE_FLOAT, {.dbl = 10.0}, -1.0, 100.0, DYNAMIC },
+    { "smoothing_period", "Peak detection smoothing period", OFFSET(smoothing), AV_OPT_TYPE_FLOAT, {.dbl = 20.0}, 0.0, 1000.0, DYNAMIC },
+    { "scene_threshold_low", "Scene change low threshold", OFFSET(scene_low), AV_OPT_TYPE_FLOAT, {.dbl = 1.0}, -1.0, 100.0, DYNAMIC },
+    { "scene_threshold_high", "Scene change high threshold", OFFSET(scene_high), AV_OPT_TYPE_FLOAT, {.dbl = 3.0}, -1.0, 100.0, DYNAMIC },
     { "percentile", "Peak detection percentile", OFFSET(percentile), AV_OPT_TYPE_FLOAT, {.dbl = 99.995}, 0.0, 100.0, DYNAMIC },
 
     { "gamut_mode", "Gamut-mapping mode", OFFSET(gamut_mode), AV_OPT_TYPE_INT, {.i64 = GAMUT_MAP_PERCEPTUAL}, 0, GAMUT_MAP_COUNT - 1, DYNAMIC, .unit = "gamut_mode" },

@@ -274,17 +274,17 @@ static int query_formats(const AVFilterContext *ctx,
         overlay_formats = overlay_pix_fmts_gbrp;
         break;
     case OVERLAY_FORMAT_AUTO:
-        return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, alpha_pix_fmts);
+        return ff_set_pixel_formats_from_list2(ctx, cfg_in, cfg_out, alpha_pix_fmts);
     default:
         av_assert0(0);
     }
 
-    formats = ff_make_format_list(main_formats);
+    formats = ff_make_pixel_format_list(main_formats);
     if ((ret = ff_formats_ref(formats, &cfg_in[MAIN]->formats)) < 0 ||
         (ret = ff_formats_ref(formats, &cfg_out[MAIN]->formats)) < 0)
         return ret;
 
-    return ff_formats_ref(ff_make_format_list(overlay_formats),
+    return ff_formats_ref(ff_make_pixel_format_list(overlay_formats),
                           &cfg_in[OVERLAY]->formats);
 }
 
@@ -316,7 +316,7 @@ static int config_input_overlay(AVFilterLink *inlink)
 
     s->overlay_is_packed_rgb =
         ff_fill_rgba_map(s->overlay_rgba_map, inlink->format) >= 0;
-    s->overlay_has_alpha = ff_fmt_is_in(inlink->format, alpha_pix_fmts);
+    s->overlay_has_alpha = ff_pixfmt_is_in(inlink->format, alpha_pix_fmts);
 
     if (s->eval_mode == EVAL_MODE_INIT) {
         eval_expr(ctx);
@@ -753,7 +753,7 @@ static int config_input_main(AVFilterLink *inlink)
 
     s->main_is_packed_rgb =
         ff_fill_rgba_map(s->main_rgba_map, inlink->format) >= 0;
-    s->main_has_alpha = ff_fmt_is_in(inlink->format, alpha_pix_fmts);
+    s->main_has_alpha = ff_pixfmt_is_in(inlink->format, alpha_pix_fmts);
     return 0;
 }
 

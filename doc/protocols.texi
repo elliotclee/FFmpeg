@@ -352,6 +352,17 @@ means auto (seekable for normal files, non-seekable for named pipes).
 Many demuxers handle seekable and non-seekable resources differently,
 overriding this might speed up opening certain files at the cost of losing some
 features (e.g. accurate seeking).
+
+@item pkt_size
+Set the maximum packet size used for file I/O. A smaller value may reduce
+memory usage. A higher value may increase throughput especially with networked
+filesystems.
+
+For reading, if explicitly set, it overrides the default internal buffer size
+(32 KB) and limits the maximum amount of data read per operation.
+
+For writing, this sets the size of each write operation. The default is 256 KB
+for regular files, 32 KB otherwise.
 @end table
 
 @section ftp
@@ -461,6 +472,19 @@ Set the Referer header. Include 'Referer: URL' header in HTTP request.
 
 @item multiple_requests
 Use persistent connections if set to 1, default is 0.
+
+@item initial_request_size
+Limit the size of initial requests. This is useful when dealing with formats
+that require frequent seeks during initial parsing. This lasts until the
+demuxer makes a read request larger than this size (without a seek in between),
+after which the implementation will continue using unbounded requests as usual.
+Disabled (set to 0) by default.
+
+Note that if enabling this option, it's strongly recommended to also enable
+the @option{multiple_requests} option, as well as setting
+@option{short_seek_size} to the same value or higher. Doing so allows FFmpeg
+to reuse a single HTTP connection wherever possible, even for formats like
+MXF or MOV that require frequent small seeks during initial parsing.
 
 @item post_data
 Set custom HTTP post data.
@@ -2271,6 +2295,13 @@ The following parameters can be set via command line options
 Timeout in ms.
 @item listen
 Create the Unix socket in listening mode.
+@item type
+Select socket type.
+@table @samp
+@item stream Corresponds to SOCK_STREAM (reliable stream-oriented)
+@item datagram Corresponds to SOCK_DGRAM (unreliable packet-oriented)
+@item seqpacket Corresponds to SOCK_SEQPACKET (reliable packet-oriented)
+@end table
 @item pkt_size
 Maximum packet size for packet-oriented sockets (SOCK_DGRAM and
 SOCK_SEQPACKET). If greater than zero, this value is used as

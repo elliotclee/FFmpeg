@@ -40,9 +40,6 @@
 #include "libavutil/time.h"
 #include "libavutil/timestamp.h"
 
-// FIXME private header, used for mid_pred()
-#include "libavcodec/mathops.h"
-
 typedef struct FilterGraphPriv {
     FilterGraph      fg;
 
@@ -226,7 +223,10 @@ typedef struct OutputFilterPriv {
 
     // those are only set if no format is specified and the encoder gives us multiple options
     // They point directly to the relevant lists of the encoder.
-    const int              *formats;
+    union {
+        const enum AVPixelFormat *pix_fmts;
+        const enum AVSampleFormat *sample_fmts;
+    };
     const AVChannelLayout  *ch_layouts;
     const int              *sample_rates;
     const enum AVColorSpace *color_spaces;
@@ -402,10 +402,10 @@ static void choose_ ## name (OutputFilterPriv *ofp, AVBPrint *bprint)          \
     av_bprint_chars(bprint, ':', 1);                                           \
 }
 
-DEF_CHOOSE_FORMAT(pix_fmts, enum AVPixelFormat, format, formats,
+DEF_CHOOSE_FORMAT(pix_fmts, enum AVPixelFormat, format, pix_fmts,
                   AV_PIX_FMT_NONE, "%s", av_get_pix_fmt_name)
 
-DEF_CHOOSE_FORMAT(sample_fmts, enum AVSampleFormat, format, formats,
+DEF_CHOOSE_FORMAT(sample_fmts, enum AVSampleFormat, format, sample_fmts,
                   AV_SAMPLE_FMT_NONE, "%s", av_get_sample_fmt_name)
 
 DEF_CHOOSE_FORMAT(sample_rates, int, sample_rate, sample_rates, 0,
@@ -862,7 +862,7 @@ int ofilter_bind_enc(OutputFilter *ofilter, unsigned sched_idx_enc,
         if (opts->format != AV_PIX_FMT_NONE) {
             ofp->format = opts->format;
         } else
-            ofp->formats = opts->formats;
+            ofp->pix_fmts = opts->pix_fmts;
 
         if (opts->color_space != AVCOL_SPC_UNSPECIFIED)
             ofp->color_space = opts->color_space;
@@ -901,7 +901,7 @@ int ofilter_bind_enc(OutputFilter *ofilter, unsigned sched_idx_enc,
         if (opts->format != AV_SAMPLE_FMT_NONE) {
             ofp->format = opts->format;
         } else {
-            ofp->formats = opts->formats;
+            ofp->sample_fmts = opts->sample_fmts;
         }
         if (opts->sample_rate) {
             ofp->sample_rate = opts->sample_rate;
@@ -1705,7 +1705,7 @@ static int configure_output_video_filter(FilterGraphPriv *fgp, AVFilterGraph *gr
     }
 
     av_assert0(!(ofp->flags & OFILTER_FLAG_DISABLE_CONVERT) ||
-               ofp->format != AV_PIX_FMT_NONE || !ofp->formats);
+               ofp->format != AV_PIX_FMT_NONE || !ofp->pix_fmts);
     av_bprint_init(&bprint, 0, AV_BPRINT_SIZE_UNLIMITED);
     choose_pix_fmts(ofp, &bprint);
     choose_color_spaces(ofp, &bprint);
@@ -2489,6 +2489,23 @@ early_exit:
     return float_pts;
 }
 
+static int64_t median3(int64_t a, int64_t b, int64_t c)
+{
+    int64_t max2, min2, m;
+
+    if (a >= b) {
+        max2 = a;
+        min2 = b;
+    } else {
+        max2 = b;
+        min2 = a;
+    }
+    m = (c >= max2) ? max2 : c;
+
+    return (m >= min2) ? m : min2;
+}
+
+
 /* Convert frame timestamps to the encoder timebase and decide how many times
  * should this (and possibly previous) frame be repeated in order to conform to
  * desired target framerate (if any).
@@ -2501,9 +2518,9 @@ static void video_sync_process(OutputFilterPriv *ofp, AVFrame *frame,
     double delta0, delta, sync_ipts, duration;
 
     if (!frame) {
-        *nb_frames_prev = *nb_frames = mid_pred(fps->frames_prev_hist[0],
-                                                fps->frames_prev_hist[1],
-                                                fps->frames_prev_hist[2]);
+        *nb_frames_prev = *nb_frames = median3(fps->frames_prev_hist[0],
+                                               fps->frames_prev_hist[1],
+                                               fps->frames_prev_hist[2]);
 
         if (!*nb_frames && fps->last_dropped) {
             atomic_fetch_add(&ofilter->nb_frames_drop, 1);

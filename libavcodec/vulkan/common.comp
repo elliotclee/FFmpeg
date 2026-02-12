@@ -18,6 +18,35 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#ifndef VULKAN_COMMON_H
+#define VULKAN_COMMON_H
+
+#pragma use_vulkan_memory_model
+
+layout (local_size_x_id = 253, local_size_y_id = 254, local_size_z_id = 255) in;
+
+#extension GL_EXT_shader_explicit_arithmetic_types : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float32 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float64 : require
+#extension GL_EXT_shader_8bit_storage : require
+#extension GL_EXT_shader_16bit_storage : require
+
+#extension GL_EXT_shader_image_load_formatted : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_KHR_memory_scope_semantics : require
+#extension GL_EXT_null_initializer : require
+
+#extension GL_EXT_expect_assume : enable
+#extension GL_EXT_control_flow_attributes : enable
+
 layout(buffer_reference, buffer_reference_align = 1) buffer u8buf {
     uint8_t v;
 };
@@ -49,6 +78,16 @@ layout(buffer_reference, buffer_reference_align = 4) buffer u32vec4buf {
 layout(buffer_reference, buffer_reference_align = 8) buffer u64buf {
     uint64_t v;
 };
+
+#define U8(x)  uint8_t(x)
+#define U16(x) uint16_t(x)
+#define U32(x) uint32_t(x)
+#define U64(x) uint64_t(x)
+
+#define I8(x)  int8_t(x)
+#define I16(x) int16_t(x)
+#define I32(x) int32_t(x)
+#define I64(x) int64_t(x)
 
 #define OFFBUF(type, b, l) \
     type(uint64_t(b) + uint64_t(l))
@@ -326,3 +365,5 @@ int left_bits(in GetBitContext gb)
 {
     return int(gb.buf_end - gb.buf) * 8 + gb.bits_valid;
 }
+
+#endif /* VULKAN_COMMON_H */

@@ -525,7 +525,10 @@ static void readrate_sleep(Demuxer *d)
         pts = av_rescale(ds->dts, 1000000, AV_TIME_BASE);
         now = av_gettime_relative();
         wc_elapsed = now - d->wallclock_start;
-        max_pts = stream_ts_offset + initial_burst + wc_elapsed * d->readrate;
+
+        if (pts <= stream_ts_offset + initial_burst) continue;
+
+        max_pts = stream_ts_offset + initial_burst + (int64_t)(wc_elapsed * d->readrate);
         lag = FFMAX(max_pts - pts, 0);
         if ( (!ds->lag && lag > 0.3 * AV_TIME_BASE) || ( lag > ds->lag + 0.3 * AV_TIME_BASE) ) {
             ds->lag = lag;
@@ -539,7 +542,7 @@ static void readrate_sleep(Demuxer *d)
             ds->lag = ds->resume_wc = ds->resume_pts = 0;
         if (ds->resume_wc) {
             elapsed = now - ds->resume_wc;
-            limit_pts = ds->resume_pts + elapsed * d->readrate_catchup;
+            limit_pts = ds->resume_pts + (int64_t)(elapsed * d->readrate_catchup);
         } else {
             elapsed = wc_elapsed;
             limit_pts = max_pts;
@@ -1876,6 +1879,7 @@ int ifile_open(const OptionsContext *o, const char *filename, Scheduler *sch)
     ic = avformat_alloc_context();
     if (!ic)
         return AVERROR(ENOMEM);
+    ic->name = av_strdup(d->log_name);
     if (o->audio_sample_rate.nb_opt) {
         av_dict_set_int(&o->g->format_opts, "sample_rate", o->audio_sample_rate.opt[o->audio_sample_rate.nb_opt - 1].u.i, 0);
     }
@@ -1964,6 +1968,8 @@ int ifile_open(const OptionsContext *o, const char *filename, Scheduler *sch)
 
     av_strlcat(d->log_name, "/",               sizeof(d->log_name));
     av_strlcat(d->log_name, ic->iformat->name, sizeof(d->log_name));
+    av_freep(&ic->name);
+    ic->name = av_strdup(d->log_name);
 
     if (scan_all_pmts_set)
         av_dict_set(&o->g->format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE);

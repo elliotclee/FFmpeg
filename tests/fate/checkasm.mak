@@ -10,6 +10,7 @@ FATE_CHECKASM = fate-checkasm-aacencdsp                                 \
                 fate-checkasm-blockdsp                                  \
                 fate-checkasm-bswapdsp                                  \
                 fate-checkasm-cavsdsp                                   \
+                fate-checkasm-crc                                       \
                 fate-checkasm-dcadsp                                    \
                 fate-checkasm-diracdsp                                  \
                 fate-checkasm-exrdsp                                    \
@@ -26,6 +27,7 @@ FATE_CHECKASM = fate-checkasm-aacencdsp                                 \
                 fate-checkasm-h264qpel                                  \
                 fate-checkasm-hevc_add_res                              \
                 fate-checkasm-hevc_deblock                              \
+                fate-checkasm-hevc_dequant                              \
                 fate-checkasm-hevc_idct                                 \
                 fate-checkasm-hevc_pel                                  \
                 fate-checkasm-hevc_sao                                  \
@@ -43,6 +45,7 @@ FATE_CHECKASM = fate-checkasm-aacencdsp                                 \
                 fate-checkasm-mpegvideoencdsp                           \
                 fate-checkasm-opusdsp                                   \
                 fate-checkasm-pixblockdsp                               \
+                fate-checkasm-png                                       \
                 fate-checkasm-qpeldsp                                   \
                 fate-checkasm-sbrdsp                                    \
                 fate-checkasm-rv34dsp                                   \
@@ -72,6 +75,7 @@ FATE_CHECKASM = fate-checkasm-aacencdsp                                 \
                 fate-checkasm-vf_fspp                                   \
                 fate-checkasm-vf_gblur                                  \
                 fate-checkasm-vf_hflip                                  \
+                fate-checkasm-vf_idet                                   \
                 fate-checkasm-vf_nlmeans                                \
                 fate-checkasm-vf_threshold                              \
                 fate-checkasm-vf_sobel                                  \
@@ -83,6 +87,7 @@ FATE_CHECKASM = fate-checkasm-aacencdsp                                 \
                 fate-checkasm-vp9dsp                                    \
                 fate-checkasm-vvc_alf                                   \
                 fate-checkasm-vvc_mc                                    \
+                fate-checkasm-vvc_sao                                   \
 
 $(FATE_CHECKASM): tests/checkasm/checkasm$(EXESUF)
 $(FATE_CHECKASM): CMD = run tests/checkasm/checkasm$(EXESUF) --test=$(@:fate-checkasm-%=%)
