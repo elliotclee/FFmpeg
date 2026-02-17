@@ -1700,6 +1700,7 @@ static int ratecontrol_1pass(SnowEncContext *enc, AVFrame *pict)
                     coef_sum+= abs(buf[x+y*stride]) * qdiv >> 16;
         }
     }
+    emms_c();
 
     /* ugly, ratecontrol just takes a sqrt again */
     av_assert0(coef_sum < INT_MAX);
@@ -2054,8 +2055,6 @@ redo_frame:
     if(avctx->flags&AV_CODEC_FLAG_PASS1)
         ff_write_pass1_stats(&enc->m);
     enc->m.last_pict_type = mpv->c.pict_type;
-
-    emms_c();
 
     ff_encode_add_stats_side_data(pkt, s->current_picture->quality,
                                   enc->encoding_error,
