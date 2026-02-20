@@ -1,4 +1,8 @@
 /*
+ * FFv1 codec
+ *
+ * Copyright (c) 2026 Lynne <dev@lynne.ee>
+ *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -16,4 +20,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/vulkan_glslang.c"
+#pragma shader_stage(compute)
+#extension GL_GOOGLE_include_directive : require
+
+#define PB_UNALIGNED
+#define GOLOMB
+#include "ffv1_enc.comp.glsl"

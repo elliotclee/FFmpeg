@@ -1499,7 +1499,7 @@ check_class_headers_cxx(){
         echo "int main(void) { "
         i=1
         for class in $classes; do
-            echo "$class obj$i;"
+            echo "$class *obj$i;"
             i=$(expr $i + 1)
         done
         echo "return 0; }"
@@ -1580,17 +1580,6 @@ check_lib(){
         enable $name && eval ${name}_extralibs="\$@"
 }
 
-check_lib_cpp(){
-    log check_lib_cpp "$@"
-    name="$1"
-    headers="$2"
-    code="$3"
-    shift 3
-    disable $name
-    test_code ld "$headers" "$code" cxx "$@" &&
-        enable $name && eval ${name}_extralibs="\$@"
-}
-
 check_lib_cxx(){
     log check_lib_cxx "$@"
     name="$1"
@@ -1642,6 +1631,26 @@ test_pkg_config_cpp(){
         set_sanitized "${name}_incflags" $pkg_incflags
 }
 
+test_pkg_config_cxx(){
+    log test_pkg_config_cxx "$@"
+    name="$1"
+    pkg_version="$2"
+    pkg="${2%% *}"
+    headers="$3"
+    classes="$4"
+    shift 4
+    disable $name
+    test_cmd $pkg_config --exists --print-errors $pkg_version || return
+    pkg_cflags=$($pkg_config --cflags $pkg_config_flags $pkg)
+    pkg_libs=$($pkg_config --libs $pkg_config_flags $pkg)
+    pkg_incdir=$($pkg_config --variable=includedir $pkg_config_flags $pkg)
+    check_class_headers_cxx "$headers" "$classes" $pkg_cflags $pkg_libs "-lstdc++" "$@" &&
+        enable $name &&
+        set_sanitized "${name}_cflags"    $pkg_cflags &&
+        set_sanitized "${name}_incdir"    $pkg_incdir &&
+        set_sanitized "${name}_extralibs" $pkg_libs "-lstdc++"
+}
+
 check_pkg_config(){
     log check_pkg_config "$@"
     name="$1"
@@ -1654,6 +1663,13 @@ check_pkg_config_cpp(){
     name="$1"
     test_pkg_config_cpp "$@" &&
         eval add_cflags \$${name}_cflags
+}
+
+check_pkg_config_cxx(){
+    log check_pkg_config_cxx "$@"
+    name="$1"
+    test_pkg_config_cxx "$@" &&
+        eval add_cxxflags \$${name}_cflags
 }
 
 check_pkg_config_header_only(){
@@ -1777,14 +1793,6 @@ require_cxx(){
     check_lib_cxx "$name" "$@" || die "ERROR: $name_version not found"
 }
 
-require_cpp(){
-    log require_cpp "$@"
-    name_version="$1"
-    name="${1%% *}"
-    shift
-    check_lib_cpp "$name" "$@" || die "ERROR: $name_version not found"
-}
-
 require_headers(){
     log require_headers "$@"
     headers="$1"
@@ -1807,6 +1815,12 @@ require_pkg_config_cpp(){
     log require_pkg_config_cpp "$@"
     pkg_version="$2"
     check_pkg_config_cpp "$@" || die "ERROR: $pkg_version not found using pkg-config$pkg_config_fail_message"
+}
+
+require_pkg_config_cxx(){
+    log require_pkg_config_cxx "$@"
+    pkg_version="$2"
+    check_pkg_config_cxx "$@" || die "ERROR: $pkg_version not found using pkg-config$pkg_config_fail_message"
 }
 
 test_host_cc(){
@@ -2049,7 +2063,6 @@ EXTERNAL_LIBRARY_LIST="
     liboapv
     libopencv
     libopencolorio
-    libopenimage
     libopenh264
     libopenjpeg
     libopenmpt
@@ -2599,6 +2612,7 @@ TYPES_LIST="
     kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
     kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange
     kCVPixelFormatType_444YpCbCr16BiPlanarVideoRange
+    kCVPixelFormatType_422YpCbCr8_yuvs
     kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ
     kCVImageBufferTransferFunction_ITU_R_2100_HLG
     kCVImageBufferTransferFunction_Linear
@@ -3105,7 +3119,7 @@ exr_decoder_select="bswapdsp"
 exr_encoder_deps="zlib"
 ffv1_decoder_select="rangecoder"
 ffv1_encoder_select="rangecoder"
-ffv1_vulkan_encoder_select="vulkan spirv_library"
+ffv1_vulkan_encoder_select="vulkan spirv_compiler"
 ffvhuff_decoder_select="huffyuv_decoder"
 ffvhuff_encoder_select="huffyuv_encoder"
 fic_decoder_select="golomb"
@@ -3340,7 +3354,7 @@ av1_vulkan_hwaccel_deps="vulkan"
 av1_vulkan_hwaccel_select="av1_decoder"
 dpx_vulkan_hwaccel_deps="vulkan spirv_compiler"
 dpx_vulkan_hwaccel_select="dpx_decoder"
-ffv1_vulkan_hwaccel_deps="vulkan spirv_library"
+ffv1_vulkan_hwaccel_deps="vulkan spirv_compiler"
 ffv1_vulkan_hwaccel_select="ffv1_decoder"
 h263_vaapi_hwaccel_deps="vaapi"
 h263_vaapi_hwaccel_select="h263_decoder"
@@ -4264,7 +4278,7 @@ cws2fws_extralibs="zlib_extralibs"
 
 # libraries, in any order
 avcodec_deps="avutil"
-avcodec_suggest="libm stdatomic zlib spirv_library"
+avcodec_suggest="libm stdatomic zlib"
 avdevice_deps="avformat avcodec avutil"
 avdevice_suggest="libm stdatomic"
 avfilter_deps="avutil"
@@ -7305,10 +7319,7 @@ enabled libopencore_amrnb && require libopencore_amrnb opencore-amrnb/interf_dec
 enabled libopencore_amrwb && require libopencore_amrwb opencore-amrwb/dec_if.h D_IF_init -lopencore-amrwb
 enabled libopencv         && { check_pkg_config libopencv opencv4 opencv2/core/core_c.h cvCreateImageHeader ||
                                require libopencv opencv2/core/core_c.h cvCreateImageHeader -lopencv_core -lopencv_imgproc; }
-enabled libopencolorio    && add_cxxflags $(pkg-config --cflags OpenColorIO) &&
-                                OCIO_LIBS=$($pkg_config --libs OpenColorIO) &&
-                            require_cpp OpenColorIO OpenColorIO/OpenColorIO.h "namespace OCIO = OCIO_NAMESPACE; OCIO::ConfigRcPtr cfg = OCIO::Config::Create();" $OCIO_LIBS -lstdc++ &&
-                            append libopencolorio_extralibs "$OCIO_LIBS -lstdc++"
+enabled libopencolorio    && require_pkg_config_cxx libopencolorio "OpenColorIO" OpenColorIO/OpenColorIO.h OCIO_NAMESPACE::Config
 enabled libopenh264       && require_pkg_config libopenh264 "openh264 >= 1.3.0" wels/codec_api.h WelsGetCodecVersion
 enabled libopenjpeg       && { check_pkg_config libopenjpeg "libopenjp2 >= 2.1.0" openjpeg.h opj_version ||
                                { require_pkg_config libopenjpeg "libopenjp2 >= 2.1.0" openjpeg.h opj_version -DOPJ_STATIC && add_cppflags -DOPJ_STATIC; } }
@@ -7716,7 +7727,7 @@ probe_glslc(){
     if test_cmd $glslc_probe -v; then
         # glslang/glslangValidator
         glslc=$glslc_probe
-        glslcflags="-V --target-env spirv1.6"
+        glslcflags="-V --target-env spirv1.6 --glsl-version 460"
         glslc_opt_speed=""
         glslc_opt_size="-Os"
         glslc_opt_none="-Od"
@@ -7725,7 +7736,7 @@ probe_glslc(){
     elif test_cmd $glslc_probe --version; then
         # glslc
         glslc=$glslc_probe
-        glslcflags="--target-env=vulkan1.4 --target-spv=spv1.6"
+        glslcflags="--target-env=vulkan1.4 --target-spv=spv1.6 -std=460"
         glslc_opt_speed="-O"
         glslc_opt_size="-Os"
         glslc_opt_none="-O0"
@@ -7811,35 +7822,49 @@ fi
 
 enabled debug && add_allcflags -g"$debuglevel" && add_asflags -g"$debuglevel"
 
-# add some useful compiler flags if supported
-check_allcflags -Wall
-check_allcflags -Wdisabled-optimization
-check_allcflags -Wpointer-arith
-check_allcflags -Wredundant-decls
-check_allcflags -Wwrite-strings
-check_allcflags -Wtype-limits
-check_allcflags -Wundef
-check_allcflags -Wempty-body
-check_cflags -Wmissing-prototypes
-check_cflags -Wstrict-prototypes
+for lang in c cxx objc; do
+    test_${lang}flags -Werror=unused-command-line-argument &&
+        append unknown_warning_${lang}flags "-Werror=unused-command-line-argument"
+    test_${lang}flags -Werror=unknown-warning-option &&
+        append unknown_warning_${lang}flags "-Werror=unknown-warning-option"
+done
 
-if enabled extra_warnings; then
-    check_allcflags -Wcast-qual
-    check_allcflags -Wextra
-    check_allcflags -Wpedantic
-fi
+check_warning(){
+    warning_flag=$1
+    flag_to_add=${2:-$1}
+    test_cflags $unknown_warning_cflags $warning_flag && add_cflags $flag_to_add
+    test_cxxflags -Werror $unknown_warning_cxxflags $warning_flag && add_cxxflags $flag_to_add
+    test_objcflags $unknown_warning_objcflags $warning_flag && add_objcflags $flag_to_add
+}
 
 check_disable_warning(){
     warning_flag=-W${1#-Wno-}
-    test_cflags $unknown_warning_flags $warning_flag && add_cflags $1
-    test_cxxflags -Werror $unknown_warning_flags $warning_flag && add_cxxflags $1
-    test_objcflags $unknown_warning_flags $warning_flag && add_objcflags $1
+    check_warning $warning_flag $1
 }
 
-test_cflags -Werror=unused-command-line-argument &&
-    append unknown_warning_flags "-Werror=unused-command-line-argument"
-test_cflags -Werror=unknown-warning-option &&
-    append unknown_warning_flags "-Werror=unknown-warning-option"
+check_c_warning(){
+    warning_flag=$1
+    test_cflags $unknown_warning_cflags $warning_flag && add_cflags $warning_flag
+}
+
+# add some useful compiler flags if supported
+check_warning -Wall
+check_warning -Wdisabled-optimization
+check_warning -Wpointer-arith
+check_warning -Wredundant-decls
+check_warning -Wwrite-strings
+check_warning -Wtype-limits
+check_warning -Wundef
+check_warning -Wempty-body
+check_c_warning -Wmissing-prototypes
+check_c_warning -Wstrict-prototypes
+check_c_warning -Wunterminated-string-initialization
+
+if enabled extra_warnings; then
+    check_warning -Wcast-qual
+    check_warning -Wextra
+    check_warning -Wpedantic
+fi
 
 check_disable_warning -Wno-parentheses
 check_disable_warning -Wno-switch
@@ -7853,7 +7878,7 @@ check_disable_warning -Wno-microsoft-enum-forward-reference
 
 check_disable_warning_headers(){
     warning_flag=-W${1#-Wno-}
-    test_cflags $warning_flag && add_cflags_headers $1
+    test_cflags $unknown_warning_cflags $warning_flag && add_cflags_headers $1
 }
 
 check_disable_warning_headers -Wno-deprecated-declarations
