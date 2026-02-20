@@ -1700,6 +1700,7 @@ static int ratecontrol_1pass(SnowEncContext *enc, AVFrame *pict)
                     coef_sum+= abs(buf[x+y*stride]) * qdiv >> 16;
         }
     }
+    emms_c();
 
     /* ugly, ratecontrol just takes a sqrt again */
     av_assert0(coef_sum < INT_MAX);
@@ -1786,7 +1787,6 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                                 EDGE_TOP | EDGE_BOTTOM);
 
     }
-    emms_c();
     pic = s->input_picture;
     pic->pict_type = pict->pict_type;
     pic->quality = pict->quality;
@@ -1831,7 +1831,6 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                                       s->current_picture->linesize[2], w>>s->chroma_h_shift, h>>s->chroma_v_shift,
                                       EDGE_WIDTH>>s->chroma_h_shift, EDGE_WIDTH>>s->chroma_v_shift, EDGE_TOP | EDGE_BOTTOM);
         }
-        emms_c();
     }
 
     ff_snow_frames_prepare(s);
@@ -2056,8 +2055,6 @@ redo_frame:
     if(avctx->flags&AV_CODEC_FLAG_PASS1)
         ff_write_pass1_stats(&enc->m);
     enc->m.last_pict_type = mpv->c.pict_type;
-
-    emms_c();
 
     ff_encode_add_stats_side_data(pkt, s->current_picture->quality,
                                   enc->encoding_error,
