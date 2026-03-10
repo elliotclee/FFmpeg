@@ -1,5 +1,5 @@
-/*
- * RV10/RV20 encoder
+/**
+ * Copyright (C) 2026 Lynne
  *
  * This file is part of FFmpeg.
  *
@@ -18,12 +18,25 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_RV10ENC_H
-#define AVCODEC_RV10ENC_H
+#ifndef SWSCALE_VULKAN_OPS_H
+#define SWSCALE_VULKAN_OPS_H
 
-typedef struct MPVMainEncContext MPVMainEncContext;
+#include "libavutil/vulkan.h"
+#include "../swscale.h"
 
-int ff_rv10_encode_picture_header(MPVMainEncContext *m);
-int ff_rv20_encode_picture_header(MPVMainEncContext *m);
+#if CONFIG_LIBSHADERC || CONFIG_LIBGLSLANG
+#include "libavutil/vulkan_spirv.h"
+#endif
 
-#endif /* AVCODEC_RV10ENC_H */
+typedef struct FFVulkanOpsCtx {
+    FFVulkanContext vkctx;
+    AVVulkanDeviceQueueFamily *qf;
+    FFVkExecPool e;
+#if CONFIG_LIBSHADERC || CONFIG_LIBGLSLANG
+    FFVkSPIRVCompiler *spvc;
+#endif
+} FFVulkanOpsCtx;
+
+int ff_sws_vk_init(SwsContext *sws, AVBufferRef *dev_ref);
+
+#endif /* SWSCALE_VULKAN_OPS_H */

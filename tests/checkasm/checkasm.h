@@ -116,6 +116,7 @@ void checkasm_check_hevc_pel(void);
 void checkasm_check_hevc_sao(void);
 void checkasm_check_hpeldsp(void);
 void checkasm_check_huffyuvdsp(void);
+void checkasm_check_huffyuvencdsp(void);
 void checkasm_check_idctdsp(void);
 void checkasm_check_idet(void);
 void checkasm_check_jpeg2000dsp(void);
@@ -130,6 +131,7 @@ void checkasm_check_mpegvideoencdsp(void);
 void checkasm_check_nlmeans(void);
 void checkasm_check_opusdsp(void);
 void checkasm_check_pixblockdsp(void);
+void checkasm_check_pixelutils(void);
 void checkasm_check_png(void);
 void checkasm_check_qpeldsp(void);
 void checkasm_check_sbrdsp(void);
@@ -480,7 +482,7 @@ int checkasm_check_float_ulp(const char *file, int line,
  * For tests that don't have that and only operate on a single
  * bitdepth, just call checkasm_check(uint8_t, ...) directly. */
 #define checkasm_check_pixel2(buf1, stride1, buf2, stride2, ...) \
-    ((bit_depth > 8) ?                                          \
+    ((bit_depth > 8) ?                                           \
      checkasm_check2(uint16_t, (const uint16_t*)buf1, stride1,   \
                                (const uint16_t*)buf2, stride2,   \
                                __VA_ARGS__) :                    \

@@ -485,6 +485,8 @@ Optimization options (experts only):
   --disable-sve            disable SVE optimizations
   --disable-sve2           disable SVE2 optimizations
   --disable-sme            disable SME optimizations
+  --disable-sme-i16i64     disable SME-I16I64 optimizations
+  --disable-sme2           disable SME2 optimizations
   --disable-inline-asm     disable use of inline assembly
   --disable-x86asm         disable use of standalone x86 assembly
   --disable-mipsdsp        disable MIPS DSP ASE R1 optimizations
@@ -1237,6 +1239,7 @@ check_archext_name_insn(){
     log check_archext_name_insn "$@"
     feature="$1"
     archext="$2"
+    archextdir=$(printf '%s' "$2" | tr '-' '_')
     instr="$3"
     instr2="$4"
     # Check if the assembly is accepted in inline assembly.
@@ -1251,7 +1254,7 @@ check_archext_name_insn(){
 
     # Test if the assembler supports the .arch_extension $archext directive.
     arch_extension_directive=".arch_extension $archext"
-    test_as <<EOF && enable as_archext_${archext}_directive || arch_extension_directive=""
+    test_as <<EOF && enable as_archext_${archextdir}_directive || arch_extension_directive=""
 $arch_directive
 $arch_extension_directive
 EOF
@@ -2303,6 +2306,8 @@ ARCH_EXT_LIST_ARM="
     sve
     sve2
     sme
+    sme_i16i64
+    sme2
 "
 
 ARCH_EXT_LIST_MIPS="
@@ -2573,6 +2578,8 @@ TOOLCHAIN_FEATURES="
     as_archext_sve_directive
     as_archext_sve2_directive
     as_archext_sme_directive
+    as_archext_sme_i16i64_directive
+    as_archext_sme2_directive
     as_dn_directive
     as_fpu_directive
     as_func
@@ -2694,12 +2701,14 @@ CONFIG_EXTRA="
     cbs_h265
     cbs_h266
     cbs_jpeg
+    cbs_lcevc
     cbs_mpeg2
     cbs_vp8
     cbs_vp9
     celp_math
     d3d12_intra_refresh
     d3d12_motion_estimator
+    d3d12_video_process_reference_info
     d3d12va_encode
     d3d12va_me_precision_eighth_pixel
     deflate_wrapper
@@ -2912,6 +2921,8 @@ i8mm_deps="aarch64 neon"
 sve_deps="aarch64 neon"
 sve2_deps="aarch64 neon sve"
 sme_deps="aarch64 neon sve sve2"
+sme_i16i64_deps="aarch64 neon sve sve2 sme"
+sme2_deps="aarch64 neon sve sve2 sme"
 
 map 'eval ${v}_inline_deps=inline_asm' $ARCH_EXT_LIST_ARM
 
@@ -3006,6 +3017,7 @@ cbs_h264_select="cbs"
 cbs_h265_select="cbs"
 cbs_h266_select="cbs"
 cbs_jpeg_select="cbs"
+cbs_lcevc_select="cbs"
 cbs_mpeg2_select="cbs"
 cbs_vp8_select="cbs"
 cbs_vp9_select="cbs"
@@ -3227,6 +3239,7 @@ prores_decoder_select="blockdsp idctdsp"
 prores_encoder_select="fdctdsp"
 prores_aw_encoder_select="fdctdsp"
 prores_ks_encoder_select="fdctdsp"
+prores_ks_vulkan_encoder_select="vulkan spirv_compiler"
 prores_raw_decoder_select="blockdsp idctdsp"
 qcelp_decoder_select="lsp"
 qdm2_decoder_select="mpegaudiodsp"
@@ -3521,6 +3534,7 @@ gfxcapture_filter_deps="cxx17 threads d3d11va IGraphicsCaptureItemInterop __x_AB
 gfxcapture_filter_extralibs="-lstdc++"
 scale_d3d11_filter_deps="d3d11va"
 scale_d3d12_filter_deps="d3d12va ID3D12VideoProcessor"
+deinterlace_d3d12_filter_deps="d3d12va ID3D12VideoProcessor"
 mestimate_d3d12_filter_deps="d3d12va ID3D12VideoMotionEstimator d3d12_motion_estimator"
 
 amf_deps_any="libdl LoadLibrary"
@@ -3692,6 +3706,7 @@ h264_metadata_bsf_deps="const_nan"
 h264_metadata_bsf_select="cbs_h264"
 h264_redundant_pps_bsf_select="cbs_h264"
 hevc_metadata_bsf_select="cbs_h265"
+lcevc_metadata_bsf_select="cbs_lcevc"
 mjpeg2jpeg_bsf_select="jpegtables"
 mpeg2_metadata_bsf_select="cbs_mpeg2"
 smpte436m_to_eia608_bsf_select="smpte_436m"
@@ -4037,8 +4052,8 @@ srtp_protocol_select="rtp_protocol srtp"
 tcp_protocol_select="network"
 tls_protocol_deps_any="gnutls openssl schannel securetransport libtls mbedtls"
 tls_protocol_select="tcp_protocol"
-# TODO: Support libtls, mbedtls.
-dtls_protocol_deps_any="openssl schannel gnutls"
+# TODO: Support libtls.
+dtls_protocol_deps_any="openssl schannel gnutls mbedtls"
 dtls_protocol_select="udp_protocol"
 udp_protocol_select="network"
 udplite_protocol_select="network"
@@ -4195,7 +4210,7 @@ smartblur_filter_deps="gpl swscale"
 sobel_opencl_filter_deps="opencl"
 sofalizer_filter_deps="libmysofa"
 spp_filter_deps="gpl avcodec"
-spp_filter_select="idctdsp fdctdsp me_cmp pixblockdsp"
+spp_filter_select="idctdsp fdctdsp pixblockdsp"
 sr_filter_deps="avformat swscale"
 sr_filter_select="dnn"
 stereo3d_filter_deps="gpl"
@@ -4289,7 +4304,7 @@ avutil_suggest="clock_gettime ffnvcodec gcrypt libm zlib libdrm libmfx opencl op
 swresample_deps="avutil"
 swresample_suggest="libm libsoxr stdatomic"
 swscale_deps="avutil"
-swscale_suggest="libm stdatomic"
+swscale_suggest="libm stdatomic spirv_library"
 shader_compression_suggest="zlib"
 
 avcodec_extralibs="pthreads_extralibs iconv_extralibs dxva2_extralibs liblcevc_dec_extralibs lcms2_extralibs"
@@ -6546,13 +6561,15 @@ if enabled aarch64; then
     # internal assembler in clang 3.3 does not support this instruction
     enabled neon && check_insn neon 'ext   v0.8B, v0.8B, v1.8B, #1'
 
-    archext_list="arm_crc dotprod i8mm sve sve2 sme"
+    archext_list="arm_crc dotprod i8mm sve sve2 sme sme_i16i64 sme2"
     enabled arm_crc && check_archext_name_insn arm_crc crc 'crc32x w0, w0, x0'
     enabled dotprod && check_archext_insn dotprod 'udot v0.4s, v0.16b, v0.16b'
     enabled i8mm    && check_archext_insn i8mm    'usdot v0.4s, v0.16b, v0.16b'
     enabled sve     && check_archext_insn sve     'whilelt p0.s, x0, x1'
     enabled sve2    && check_archext_insn sve2    'sqrdmulh z0.s, z0.s, z0.s'
     enabled sme     && check_archext_insn sme     'smstart' 'cntb x0'
+    enabled sme_i16i64 && check_archext_name_insn sme_i16i64 sme-i16i64 'smstart' 'smopa za0.d, p0/m, p0/m, z0.h, z1.h'
+    enabled sme2    && check_archext_insn sme2    'smstart' 'sdot za.s[w10, 0], {z0.b-z3.b}, {z4.b-z7.b}'
 
     # Disable the main feature (e.g. HAVE_NEON) if neither inline nor external
     # assembly support the feature out of the box. Skip this for the features
@@ -7071,6 +7088,7 @@ test_code cc "windows.h d3d12video.h" "D3D12_VIDEO_ENCODER_CODEC c = D3D12_VIDEO
 test_code cc "windows.h d3d12video.h" "D3D12_FEATURE_DATA_VIDEO_ENCODER_INTRA_REFRESH_MODE check = { 0 };" && enable d3d12_intra_refresh
 test_code cc "windows.h d3d12video.h" "D3D12_VIDEO_ENCODER_MOTION_ESTIMATION_PRECISION_MODE m = D3D12_VIDEO_ENCODER_MOTION_ESTIMATION_PRECISION_MODE_EIGHTH_PIXEL; (void)m;" && enable d3d12va_me_precision_eighth_pixel
 test_code cc "windows.h d3d12video.h" "D3D12_FEATURE_DATA_VIDEO_MOTION_ESTIMATOR check = { 0 };" && enable d3d12_motion_estimator
+test_code cc "windows.h d3d12video.h" "D3D12_FEATURE_DATA_VIDEO_PROCESS_REFERENCE_INFO check = { 0 };" && enable d3d12_video_process_reference_info
 check_type "windows.h" "DPI_AWARENESS_CONTEXT" -D_WIN32_WINNT=0x0A00
 check_type "windows.h security.h schnlsp.h" SecPkgContext_KeyingMaterialInfo -DSECURITY_WIN32
 check_type "d3d9.h dxva2api.h" DXVA2_ConfigPictureDecode -D_WIN32_WINNT=0x0602
@@ -7315,8 +7333,10 @@ enabled libnpp            && { test_cpp_condition "$(cd "$source_path"; pwd)/lib
                                die "ERROR: libnpp not found"; } &&
                              { check_func_headers "nppi.h" nppiYCbCr420_8u_P2P3R $libnpp_extralibs ||
                                die "ERROR: libnpp support is deprecated, version 13.0 and up are not supported"; }
-enabled libopencore_amrnb && require libopencore_amrnb opencore-amrnb/interf_dec.h Decoder_Interface_init -lopencore-amrnb
-enabled libopencore_amrwb && require libopencore_amrwb opencore-amrwb/dec_if.h D_IF_init -lopencore-amrwb
+enabled libopencore_amrnb && { check_pkg_config libopencore_amrnb opencore-amrnb opencore-amrnb/interf_dec.h Decoder_Interface_init ||
+                               require libopencore_amrnb opencore-amrnb/interf_dec.h Decoder_Interface_init -lopencore-amrnb; }
+enabled libopencore_amrwb && { check_pkg_config libopencore_amrwb opencore-amrwb opencore-amrwb/dec_if.h D_IF_init ||
+                               require libopencore_amrwb opencore-amrwb/dec_if.h D_IF_init -lopencore-amrwb; }
 enabled libopencv         && { check_pkg_config libopencv opencv4 opencv2/core/core_c.h cvCreateImageHeader ||
                                require libopencv opencv2/core/core_c.h cvCreateImageHeader -lopencv_core -lopencv_imgproc; }
 enabled libopencolorio    && require_pkg_config_cxx libopencolorio "OpenColorIO" OpenColorIO/OpenColorIO.h OCIO_NAMESPACE::Config
@@ -7370,7 +7390,8 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
 enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
 enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
 enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
-enabled libvo_amrwbenc    && require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc
+enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
+                               require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
 enabled libvorbis         && require_pkg_config libvorbis vorbis vorbis/codec.h vorbis_info_init &&
                              require_pkg_config libvorbisenc vorbisenc vorbis/vorbisenc.h vorbis_encode_init
 
@@ -7856,6 +7877,10 @@ check_warning -Wwrite-strings
 check_warning -Wtype-limits
 check_warning -Wundef
 check_warning -Wempty-body
+# Warn about excessive stack usage, using a 120 KiB per-function threshold.
+# This roughly matches the default thread stack size on Musl, which is 128 KiB,
+# leaving some headroom for caller frames.
+check_warning -Wstack-usage=122880
 check_c_warning -Wmissing-prototypes
 check_c_warning -Wstrict-prototypes
 check_c_warning -Wunterminated-string-initialization
@@ -8172,16 +8197,19 @@ enabled threads || warn \
     "environment."
 
 case $target_os in
-haiku)
-    disable memalign
-    disable posix_memalign
-    ;;
 *-dos|freedos|opendos)
     if test_cpp_condition sys/version.h "defined(__DJGPP__) && __DJGPP__ == 2 && __DJGPP_MINOR__ == 5"; then
         disable memalign
     fi
     ;;
 esac
+
+if ! enabled_any memalign posix_memalign aligned_malloc; then
+    if enabled_any asm inline_asm; then
+        die "ERROR: Building with assembly enabled is not supported on platforms "\
+            "without aligned memory allocations! Try reconfiguring with --disable-asm"
+    fi
+fi
 
 flatten_extralibs(){
     nested_entries=
@@ -8375,6 +8403,8 @@ if enabled aarch64; then
     echo "SVE enabled               ${sve-no}"
     echo "SVE2 enabled              ${sve2-no}"
     echo "SME enabled               ${sme-no}"
+    echo "SME-I16I64 enabled        ${sme_i16i64-no}"
+    echo "SME2 enabled              ${sme2-no}"
 fi
 if enabled arm; then
     echo "ARMv5TE enabled           ${armv5te-no}"

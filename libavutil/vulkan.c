@@ -334,6 +334,7 @@ void ff_vk_exec_pool_free(FFVulkanContext *s, FFVkExecPool *pool)
 
         av_freep(&sd->desc_sets);
     }
+    pool->nb_reg_shd = 0;
 
     for (int i = 0; i < pool->pool_size; i++) {
         if (pool->cmd_buf_pools[i])
@@ -350,6 +351,7 @@ void ff_vk_exec_pool_free(FFVulkanContext *s, FFVkExecPool *pool)
     av_free(pool->cmd_buf_pools);
     av_free(pool->cmd_bufs);
     av_free(pool->contexts);
+    pool->pool_size = 0;
 }
 
 int ff_vk_exec_pool_init(FFVulkanContext *s, AVVulkanDeviceQueueFamily *qf,
@@ -2654,7 +2656,7 @@ int ff_vk_shader_register_exec(FFVulkanContext *s, FFVkExecPool *pool,
 }
 
 static inline const FFVulkanShaderData *get_shd_data(FFVkExecContext *e,
-                                                     FFVulkanShader *shd)
+                                                     const FFVulkanShader *shd)
 {
     for (int i = 0; i < e->parent->nb_reg_shd; i++)
         if (e->parent->reg_shd[i].shd == shd)
@@ -2764,7 +2766,7 @@ void ff_vk_shader_update_push_const(FFVulkanContext *s, FFVkExecContext *e,
 }
 
 void ff_vk_exec_bind_shader(FFVulkanContext *s, FFVkExecContext *e,
-                            FFVulkanShader *shd)
+                            const FFVulkanShader *shd)
 {
     FFVulkanFunctions *vk = &s->vkfn;
     const FFVulkanShaderData *sd = get_shd_data(e, shd);
