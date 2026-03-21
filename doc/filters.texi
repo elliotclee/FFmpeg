@@ -7743,6 +7743,11 @@ The file path of the downloaded whisper.cpp model (mandatory).
 The language to use for transcription ('auto' for auto-detect).
 Default value: @code{"auto"}
 
+@item translate
+If enabled, translate the transcription from the source language to English. A
+multilingual model is required to enable this option.
+Default value: @code{"false"}
+
 @item queue
 The maximum size that will be queued into the filter before processing the audio
 with whisper. Using a small value the audio stream will be processed more often,
@@ -25648,6 +25653,22 @@ Work the same as the identical @ref{scale} filter options.
 @item reset_sar
 Works the same as the identical @ref{scale} filter option.
 
+@item in_color_range
+Override input color range.
+
+@item out_color_range
+Specify output color range.
+
+The accepted values for in_trc and out_trc are:
+@table @samp
+@item studio
+Studio (or restricted, or MPEG) color range.
+
+@item full
+Full (or JPEG) color range.
+
+@end table
+
 @anchor{color_profile}
 @item color_profile
 Specify all color properties at once.
@@ -25665,10 +25686,13 @@ BT.2020
 
 @end table
 
-@item trc
+@item in_trc
+Override input transfer characteristics.
+
+@item out_trc
 Specify output transfer characteristics.
 
-The accepted values are:
+The accepted values for in_trc and out_trc are:
 @table @samp
 @item bt709
 BT.709
@@ -25720,10 +25744,13 @@ ARIB_STD_B67
 
 @end table
 
-@item primaries
+@item in_primaries
+Override input color primaries.
+
+@item out_primaries
 Specify output color primaries.
 
-The accepted values are:
+The accepted values for in_primaries and out_primaries are:
 @table @samp
 @item bt709
 BT.709
@@ -25774,6 +25801,21 @@ vpp_amf=-2:720:format=yuv420p
 Upscale to 4K and change color profile to bt2020.
 @example
 vpp_amf=4096:2160:color_profile=bt2020
+@end example
+
+@item
+Override display mastering, max CLL and max FALL metadata for filter input to represent those parameters:
+Primary G: x=0.2650 y=0.6900
+Primary B: x=0.1500 y=0.0600
+Primary R: x=0.6800 y=0.3200
+White point: x=0.3127 y=0.3290
+Max. luminance: 1100.0000 cd/m²
+Min. luminance: 0.0040 cd/m²
+MaxCLL: 1100 cd/m²
+MaxFALL: 400 cd/m²
+
+@example
+vpp_amf=color_profile=bt2020:in_trc=smpte2084:in_primaries=bt2020:master_display='G(13250,23460)B(7500,3000)R(34000,16000)WP(15635,16450)L(11000000,40)':max_cll='1100,400'
 @end example
 @end itemize
 

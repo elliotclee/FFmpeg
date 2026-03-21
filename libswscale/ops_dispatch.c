@@ -40,7 +40,8 @@ typedef struct SwsOpPass {
     int pixel_bits_out;
     int idx_in[4];
     int idx_out[4];
-    bool memcpy_in;
+    bool memcpy_first;
+    bool memcpy_last;
     bool memcpy_out;
 } SwsOpPass;
 
@@ -90,9 +91,15 @@ int ff_sws_ops_compile(SwsContext *ctx, const SwsOpList *ops, SwsCompiledOp *out
         return 0;
     }
 
-    av_log(ctx, AV_LOG_WARNING, "No backend found for operations:\n");
-    ff_sws_op_list_print(ctx, AV_LOG_WARNING, AV_LOG_TRACE, ops);
     return AVERROR(ENOTSUP);
+}
+
+void ff_sws_compiled_op_unref(SwsCompiledOp *comp)
+{
+    if (comp->free)
+        comp->free(comp->priv);
+
+    *comp = (SwsCompiledOp) {0};
 }
 
 static void op_pass_free(void *ptr)
@@ -101,9 +108,7 @@ static void op_pass_free(void *ptr)
     if (!p)
         return;
 
-    if (p->comp.free)
-        p->comp.free(p->comp.priv);
-
+    ff_sws_compiled_op_unref(&p->comp);
     av_free(p);
 }
 
@@ -117,8 +122,8 @@ static inline void get_row_data(const SwsOpPass *p, const int y,
         out[i] = base->out[i] + (y >> base->out_sub_y[i]) * base->out_stride[i];
 }
 
-static void op_pass_setup(const SwsFrame *out, const SwsFrame *in,
-                          const SwsPass *pass)
+static int op_pass_setup(const SwsFrame *out, const SwsFrame *in,
+                         const SwsPass *pass)
 {
     const AVPixFmtDescriptor *indesc  = av_pix_fmt_desc_get(in->format);
     const AVPixFmtDescriptor *outdesc = av_pix_fmt_desc_get(out->format);
@@ -135,9 +140,10 @@ static void op_pass_setup(const SwsFrame *out, const SwsFrame *in,
     const int tail_size  = pass->width - safe_width;
     p->tail_off_in   = safe_width * p->pixel_bits_in  >> 3;
     p->tail_off_out  = safe_width * p->pixel_bits_out >> 3;
-    p->tail_size_in  = tail_size  * p->pixel_bits_in  >> 3;
-    p->tail_size_out = tail_size  * p->pixel_bits_out >> 3;
-    p->memcpy_in     = false;
+    p->tail_size_in  = (tail_size * p->pixel_bits_in  + 7) >> 3;
+    p->tail_size_out = (tail_size * p->pixel_bits_out + 7) >> 3;
+    p->memcpy_first  = false;
+    p->memcpy_last   = false;
     p->memcpy_out    = false;
 
     for (int i = 0; i < p->planes_in; i++) {
@@ -148,8 +154,12 @@ static void op_pass_setup(const SwsFrame *out, const SwsFrame *in,
         const int plane_w    = (aligned_w + sub_x) >> sub_x;
         const int plane_pad  = (comp->over_read + sub_x) >> sub_x;
         const int plane_size = plane_w * p->pixel_bits_in >> 3;
-        if (comp->slice_align)
-            p->memcpy_in |= plane_size + plane_pad > in->linesize[idx];
+        const int total_size = plane_size + plane_pad;
+        if (in->linesize[idx] >= 0) {
+            p->memcpy_last |= total_size > in->linesize[idx];
+        } else {
+            p->memcpy_first |= total_size > -in->linesize[idx];
+        }
         exec->in[i]        = in->data[idx];
         exec->in_stride[i] = in->linesize[idx];
         exec->in_sub_y[i]  = sub_y;
@@ -164,8 +174,7 @@ static void op_pass_setup(const SwsFrame *out, const SwsFrame *in,
         const int plane_w    = (aligned_w + sub_x) >> sub_x;
         const int plane_pad  = (comp->over_write + sub_x) >> sub_x;
         const int plane_size = plane_w * p->pixel_bits_out >> 3;
-        if (comp->slice_align)
-            p->memcpy_out |= plane_size + plane_pad > out->linesize[idx];
+        p->memcpy_out |= plane_size + plane_pad > FFABS(out->linesize[idx]);
         exec->out[i]        = out->data[idx];
         exec->out_stride[i] = out->linesize[idx];
         exec->out_sub_y[i]  = sub_y;
@@ -180,6 +189,8 @@ static void op_pass_setup(const SwsFrame *out, const SwsFrame *in,
         exec->in_bump[i]  = exec->in_stride[i]  - blocks_main * exec->block_size_in;
         exec->out_bump[i] = exec->out_stride[i] - blocks_main * exec->block_size_out;
     }
+
+    return 0;
 }
 
 /* Dispatch kernel over the last column of the image using memcpy */
@@ -264,7 +275,9 @@ static void op_pass_run(const SwsFrame *out, const SwsFrame *in, const int y,
      *
      * 1. We can overread the input, unless this is the last line of an
      *    unpadded buffer. All defined operations can handle arbitrary pixel
-     *    input, so overread of arbitrary data is fine.
+     *    input, so overread of arbitrary data is fine. For flipped images,
+     *    this condition is actually *inverted* to where the first line is
+     *    the one at the end of the buffer.
      *
      * 2. We can overwrite the output, as long as we don't write more than the
      *    amount of pixels that fit into one linesize. So we always need to
@@ -276,8 +289,8 @@ static void op_pass_run(const SwsFrame *out, const SwsFrame *in, const int y,
      *    need to worry about this for the end of a slice.
      */
 
-    const int last_slice  = y + h == pass->height;
-    const bool memcpy_in  = last_slice && p->memcpy_in;
+    const bool memcpy_in  = p->memcpy_last && y + h == pass->height ||
+                            p->memcpy_first && y == 0;
     const bool memcpy_out = p->memcpy_out;
     const int num_blocks  = p->num_blocks;
     const int blocks_main = num_blocks - memcpy_out;
@@ -314,8 +327,8 @@ static int rw_pixel_bits(const SwsOp *op)
     return elems * size * bits;
 }
 
-static int compile(SwsGraph *graph, const SwsOpList *ops,
-                   const SwsFormat *dst, SwsPass *input, SwsPass **output)
+static int compile(SwsGraph *graph, const SwsOpList *ops, SwsPass *input,
+                   SwsPass **output)
 {
     SwsContext *ctx = graph->ctx;
     SwsOpPass *p = av_mallocz(sizeof(*p));
@@ -326,6 +339,7 @@ static int compile(SwsGraph *graph, const SwsOpList *ops,
     if (ret < 0)
         goto fail;
 
+    const SwsFormat *dst = &ops->dst;
     if (p->comp.opaque) {
         SwsCompiledOp c = p->comp;
         av_free(p);
@@ -361,16 +375,17 @@ fail:
     return ret;
 }
 
-int ff_sws_compile_pass(SwsGraph *graph, SwsOpList *ops, int flags,
-                        const SwsFormat *dst, SwsPass *input, SwsPass **output)
+int ff_sws_compile_pass(SwsGraph *graph, SwsOpList **pops, int flags,
+                        SwsPass *input, SwsPass **output)
 {
     SwsContext *ctx = graph->ctx;
-    int ret;
+    SwsOpList *ops = *pops;
+    int ret = 0;
 
     /* Check if the whole operation graph is an end-to-end no-op */
     if (ff_sws_op_list_is_noop(ops)) {
         *output = input;
-        return 0;
+        goto out;
     }
 
     const SwsOp *read  = ff_sws_op_list_input(ops);
@@ -378,14 +393,26 @@ int ff_sws_compile_pass(SwsGraph *graph, SwsOpList *ops, int flags,
     if (!read || !write) {
         av_log(ctx, AV_LOG_ERROR, "First and last operations must be a read "
                "and write, respectively.\n");
-        return AVERROR(EINVAL);
+        ret = AVERROR(EINVAL);
+        goto out;
     }
 
     if (flags & SWS_OP_FLAG_OPTIMIZE) {
         ret = ff_sws_op_list_optimize(ops);
         if (ret < 0)
-            return ret;
+            goto out;
+        av_log(ctx, AV_LOG_DEBUG, "Operation list after optimizing:\n");
+        ff_sws_op_list_print(ctx, AV_LOG_DEBUG, AV_LOG_TRACE, ops);
     }
 
-    return compile(graph, ops, dst, input, output);
+    ret = compile(graph, ops, input, output);
+
+out:
+    if (ret == AVERROR(ENOTSUP)) {
+        av_log(ctx, AV_LOG_WARNING, "No backend found for operations:\n");
+        ff_sws_op_list_print(ctx, AV_LOG_WARNING, AV_LOG_TRACE, ops);
+    }
+    ff_sws_op_list_free(&ops);
+    *pops = NULL;
+    return ret;
 }

@@ -1041,10 +1041,10 @@ static int new_pes_packet(PESContext *pes, AVPacket *pkt)
                    "Invalid JPEG-XS header size %"PRIu32" > packet size %d\n",
                    header_size, pkt->size);
             pes->flags |= AV_PKT_FLAG_CORRUPT;
-            return AVERROR_INVALIDDATA;
+        } else {
+            pkt->data += header_size;
+            pkt->size -= header_size;
         }
-        pkt->data += header_size;
-        pkt->size -= header_size;
     }
 
     memset(pkt->data + pkt->size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
@@ -1703,7 +1703,7 @@ static int mp4_read_iods(AVFormatContext *s, const uint8_t *buf, unsigned size,
 
     ret = parse_mp4_descr(&d, avio_tell(&d.pb.pub), size, MP4IODescrTag);
 
-    *descr_count = d.descr_count;
+    *descr_count += d.descr_count;
     return ret;
 }
 
@@ -2614,7 +2614,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
             get8(&p, p_end); // label
             len -= 2;
             mp4_read_iods(ts->stream, p, len, mp4_descr + mp4_descr_count,
-                          &mp4_descr_count, MAX_MP4_DESCR_COUNT);
+                          &mp4_descr_count, MAX_MP4_DESCR_COUNT - mp4_descr_count);
         } else if (tag == REGISTRATION_DESCRIPTOR && len >= 4) {
             prog_reg_desc = bytestream_get_le32(&p);
             len -= 4;
