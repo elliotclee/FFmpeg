@@ -37,12 +37,30 @@ static LCEVC_ColorFormat map_format(int format)
         return LCEVC_I420_8;
     case AV_PIX_FMT_YUV420P10:
         return LCEVC_I420_10_LE;
+    case AV_PIX_FMT_YUV420P12:
+        return LCEVC_I420_12_LE;
+    case AV_PIX_FMT_YUV422P:
+        return LCEVC_I422_8;
+    case AV_PIX_FMT_YUV422P10:
+        return LCEVC_I422_10_LE;
+    case AV_PIX_FMT_YUV422P12:
+        return LCEVC_I422_12_LE;
+    case AV_PIX_FMT_YUV444P:
+        return LCEVC_I444_8;
+    case AV_PIX_FMT_YUV444P10:
+        return LCEVC_I444_10_LE;
+    case AV_PIX_FMT_YUV444P12:
+        return LCEVC_I444_12_LE;
     case AV_PIX_FMT_NV12:
         return LCEVC_NV12_8;
     case AV_PIX_FMT_NV21:
         return LCEVC_NV21_8;
     case AV_PIX_FMT_GRAY8:
         return LCEVC_GRAY_8;
+    case AV_PIX_FMT_GRAY10LE:
+        return LCEVC_GRAY_10_LE;
+    case AV_PIX_FMT_GRAY12LE:
+        return LCEVC_GRAY_12_LE;
     }
 
     return LCEVC_ColorFormat_Unknown;
@@ -113,13 +131,14 @@ static int alloc_enhanced_frame(void *logctx, FFLCEVCFrame *frame_ctx,
 static int lcevc_send_frame(void *logctx, FFLCEVCFrame *frame_ctx, const AVFrame *in)
 {
     FFLCEVCContext *lcevc = frame_ctx->lcevc;
+    LCEVC_ColorFormat fmt = map_format(in->format);
     const AVFrameSideData *sd = av_frame_get_side_data(in, AV_FRAME_DATA_LCEVC);
     AVFrame *opaque;
     LCEVC_PictureHandle picture;
     LCEVC_ReturnCode res;
     int ret = 0;
 
-    if (!sd)
+    if (!sd || fmt == LCEVC_ColorFormat_Unknown)
         return 1;
 
     res = LCEVC_SendDecoderEnhancementData(lcevc->decoder, in->pts, sd->data, sd->size);
@@ -369,6 +388,7 @@ end:
 
 static const CodedBitstreamUnitType decompose_unit_types[] = {
     LCEVC_IDR_NUT,
+    LCEVC_NON_IDR_NUT,
 };
 
 int ff_lcevc_alloc(FFLCEVCContext **plcevc, void *logctx)

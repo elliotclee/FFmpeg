@@ -44,9 +44,12 @@
  * directly incremented by the corresponding read/write functions.
  */
 typedef struct SwsOpIter {
-    const uint8_t *in[4];
-    uint8_t *out[4];
+    uintptr_t in[4];
+    uintptr_t out[4];
     int x, y;
+
+    /* Link back to per-slice execution context */
+    const SwsOpExec *exec;
 } SwsOpIter;
 
 #ifdef __clang__
@@ -68,6 +71,7 @@ typedef struct SwsOpIter {
 #define fn(name)  bitfn(name, FN_SUFFIX)
 
 #define av_q2pixel(q) ((q).den ? (pixel_t) (q).num / (q).den : 0)
+#define bump_ptr(ptr, bump) ((pixel_t *) ((uintptr_t) (ptr) + (bump)))
 
 /* Helper macros to make writing common function signatures less painful */
 #define DECL_FUNC(NAME, ...)                                                    \

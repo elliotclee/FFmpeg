@@ -270,6 +270,7 @@ TESTPROGS = adler32                                                     \
             cpu                                                         \
             crc                                                         \
             des                                                         \
+            detection_bbox                                              \
             dict                                                        \
             display                                                     \
             encryption_info                                             \
@@ -286,6 +287,7 @@ TESTPROGS = adler32                                                     \
             lfg                                                         \
             lls                                                         \
             log                                                         \
+            mathematics                                                 \
             md5                                                         \
             murmur3                                                     \
             opt                                                         \
@@ -296,16 +298,20 @@ TESTPROGS = adler32                                                     \
             pixfmt_best                                                 \
             random_seed                                                 \
             rational                                                    \
+            rc4                                                         \
             ripemd                                                      \
             sha                                                         \
             sha512                                                      \
+            samplefmt                                                   \
             side_data_array                                             \
             softfloat                                                   \
+            spherical                                                   \
             stereo3d                                                    \
             tree                                                        \
             twofish                                                     \
             utf8                                                        \
             uuid                                                        \
+            video_enc_params                                            \
             xtea                                                        \
             tea                                                         \
 
