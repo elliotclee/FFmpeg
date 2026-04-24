@@ -415,6 +415,7 @@ Toolchain options:
   --pkg-config-flags=FLAGS pass additional flags to pkgconf []
   --ranlib=RANLIB          use ranlib RANLIB [$ranlib_default]
   --doxygen=DOXYGEN        use DOXYGEN to generate API doc [$doxygen_default]
+  --makeinfo=MAKEINFO      use MAKEINFO to generate documentation [$makeinfo_default]
   --host-cc=HOSTCC         use host C compiler HOSTCC
   --host-cflags=HCFLAGS    use HCFLAGS when compiling for host
   --host-cppflags=HCPPFLAGS use HCPPFLAGS when compiling for host
@@ -2716,7 +2717,6 @@ HAVE_LIST="
     gzip
     ioctl_posix
     libdrm_getfb2
-    makeinfo
     makeinfo_html
     opencl_d3d11
     opencl_drm_arm
@@ -2898,6 +2898,7 @@ CMDLINE_SET="
     cxx
     dep_cc
     doxygen
+    makeinfo
     env
     extra_version
     gas
@@ -3285,6 +3286,7 @@ nuv_decoder_select="idctdsp"
 opus_decoder_deps="swresample"
 opus_encoder_select="audio_frame_queue"
 pdv_decoder_select="inflate_wrapper"
+pdv_encoder_select="deflate_wrapper"
 png_decoder_select="inflate_wrapper"
 png_encoder_select="deflate_wrapper llvidencdsp"
 prores_decoder_select="blockdsp idctdsp"
@@ -3574,7 +3576,9 @@ scale_cuda_filter_deps="ffnvcodec"
 scale_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 thumbnail_cuda_filter_deps="ffnvcodec"
 thumbnail_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
-transpose_npp_filter_deps="ffnvcodec libnppig libnppicc libnppicc libnppc libnppidei libnppif"
+transpose_cuda_filter_deps="ffnvcodec"
+transpose_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
+transpose_npp_filter_deps="ffnvcodec libnpp"
 overlay_cuda_filter_deps="ffnvcodec"
 overlay_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 pad_cuda_filter_deps="ffnvcodec"
@@ -4144,15 +4148,15 @@ avgblur_vulkan_filter_deps="vulkan spirv_compiler"
 azmq_filter_deps="libzmq"
 blackdetect_vulkan_filter_deps="vulkan spirv_library"
 blackframe_filter_deps="gpl"
-blend_vulkan_filter_deps="vulkan spirv_library"
+blend_vulkan_filter_deps="vulkan spirv_compiler"
 boxblur_filter_deps="gpl"
 boxblur_opencl_filter_deps="opencl gpl"
 bs2b_filter_deps="libbs2b"
 bwdif_cuda_filter_deps="ffnvcodec"
 bwdif_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 bwdif_vulkan_filter_deps="vulkan spirv_compiler"
-chromaber_vulkan_filter_deps="vulkan spirv_library"
-color_vulkan_filter_deps="vulkan spirv_library"
+chromaber_vulkan_filter_deps="vulkan spirv_compiler"
+color_vulkan_filter_deps="vulkan spirv_compiler"
 colorkey_opencl_filter_deps="opencl"
 colormatrix_filter_deps="gpl"
 convolution_opencl_filter_deps="opencl"
@@ -4181,7 +4185,7 @@ elbg_filter_deps="avcodec"
 eq_filter_deps="gpl"
 erosion_opencl_filter_deps="opencl"
 find_rect_filter_deps="avcodec avformat gpl"
-flip_vulkan_filter_deps="vulkan spirv_library"
+flip_vulkan_filter_deps="vulkan spirv_compiler"
 flite_filter_deps="libflite threads"
 framerate_filter_select="scene_sad"
 freezedetect_filter_select="scene_sad"
@@ -4190,15 +4194,15 @@ frei0r_filter_deps="frei0r"
 frei0r_src_filter_deps="frei0r"
 fspp_filter_deps="gpl"
 fsync_filter_deps="avformat"
-gblur_vulkan_filter_deps="vulkan spirv_library"
-hflip_vulkan_filter_deps="vulkan spirv_library"
+gblur_vulkan_filter_deps="vulkan spirv_compiler"
+hflip_vulkan_filter_deps="vulkan spirv_compiler"
 histeq_filter_deps="gpl"
 hqdn3d_filter_deps="gpl"
 iccdetect_filter_deps="lcms2"
 iccgen_filter_deps="lcms2"
 identity_filter_select="scene_sad"
 interlace_filter_deps="gpl"
-interlace_vulkan_filter_deps="vulkan spirv_library"
+interlace_vulkan_filter_deps="vulkan spirv_compiler"
 kerndeint_filter_deps="gpl"
 ladspa_filter_deps="ladspa libdl"
 lcevc_filter_deps="liblcevc_dec"
@@ -4229,7 +4233,7 @@ overlay_opencl_filter_deps="opencl"
 overlay_qsv_filter_deps="libmfx"
 overlay_qsv_filter_select="qsvvpp"
 overlay_vaapi_filter_deps="vaapi VAProcPipelineCaps_blend_flags"
-overlay_vulkan_filter_deps="vulkan spirv_library"
+overlay_vulkan_filter_deps="vulkan spirv_compiler"
 owdenoise_filter_deps="gpl"
 pad_opencl_filter_deps="opencl"
 pan_filter_deps="swresample"
@@ -4250,10 +4254,11 @@ scale2ref_filter_deps="swscale"
 scale_filter_deps="swscale"
 sr_amf_filter_deps="amf"
 vpp_amf_filter_deps="amf"
+frc_amf_filter_deps="amf windows_h"
 scale_qsv_filter_deps="libmfx"
 scale_qsv_filter_select="qsvvpp"
 scdet_filter_select="scene_sad"
-scdet_vulkan_filter_deps="vulkan spirv_library"
+scdet_vulkan_filter_deps="vulkan spirv_compiler"
 select_filter_select="scene_sad"
 sharpness_vaapi_filter_deps="vaapi"
 showcqt_filter_deps="avformat swscale"
@@ -4279,11 +4284,12 @@ tonemap_opencl_filter_deps="opencl const_nan"
 transpose_opencl_filter_deps="opencl"
 transpose_vaapi_filter_deps="vaapi VAProcPipelineCaps_rotation_flags"
 transpose_vt_filter_deps="videotoolbox VTPixelRotationSessionCreate"
-transpose_vulkan_filter_deps="vulkan spirv_library"
+transpose_vulkan_filter_deps="vulkan spirv_compiler"
 unsharp_opencl_filter_deps="opencl"
 uspp_filter_deps="gpl avcodec"
+v360_vulkan_filter_deps="vulkan spirv_compiler"
 vaguedenoiser_filter_deps="gpl"
-vflip_vulkan_filter_deps="vulkan spirv_library"
+vflip_vulkan_filter_deps="vulkan spirv_compiler"
 vidstabdetect_filter_deps="libvidstab"
 vidstabtransform_filter_deps="libvidstab"
 libvmaf_filter_deps="libvmaf"
@@ -4297,7 +4303,7 @@ scale_vulkan_filter_deps="vulkan spirv_compiler spirv_library"
 vpp_qsv_filter_deps="libmfx"
 vpp_qsv_filter_select="qsvvpp"
 xfade_opencl_filter_deps="opencl"
-xfade_vulkan_filter_deps="vulkan spirv_library"
+xfade_vulkan_filter_deps="vulkan spirv_compiler"
 yadif_cuda_filter_deps="ffnvcodec"
 yadif_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 yadif_videotoolbox_filter_deps="metal corevideo videotoolbox"
@@ -4381,7 +4387,7 @@ podpages_deps="perl"
 manpages_deps="perl pod2man"
 htmlpages_deps="perl"
 htmlpages_deps_any="makeinfo_html texi2html"
-txtpages_deps="perl makeinfo"
+txtpages_deps="perl makeinfo_command"
 doc_deps_any="manpages htmlpages podpages txtpages"
 
 # default parameters
@@ -4405,6 +4411,7 @@ stdcxx_default="c++17"
 cxx_default="g++"
 host_cc_default="gcc"
 doxygen_default="doxygen"
+makeinfo_default="makeinfo"
 install="install"
 ln_s_default="ln -s -f"
 glslc_default="glslc"
@@ -5053,7 +5060,7 @@ if enabled cuda_nvcc; then
 fi
 
 set_default arch cc cxx doxygen pkg_config ranlib strip sysinclude \
-    target_exec x86asmexe glslc metalcc metallib stdc stdcxx
+    target_exec x86asmexe glslc metalcc metallib stdc stdcxx makeinfo
 enabled cross_compile || host_cc_default=$cc
 set_default host_cc
 
@@ -5070,7 +5077,7 @@ elif is_in -static $cc $LDFLAGS && ! is_in --static $pkg_config $pkg_config_flag
 Note: When building a static binary, add --pkg-config-flags=\"--static\"."
 fi
 
-if test $doxygen != $doxygen_default && \
+if test "$doxygen" != "$doxygen_default" && \
   ! $doxygen --version >/dev/null 2>&1; then
     warn "Specified doxygen \"$doxygen\" not found, API documentation will fail to build."
 fi
@@ -6776,7 +6783,7 @@ elif enabled ppc; then
     fi
 
     if enabled vsx; then
-        check_cflags -mvsx &&
+        check_cflags -mvsx
         check_cc vsx altivec.h "int v[4] = { 0 };
                                 vector signed int v1 = vec_vsx_ld(0, v);"
     fi
@@ -7622,10 +7629,14 @@ enabled schannel &&
 
 enabled schannel && check_cc dtls_protocol "windows.h security.h schnlsp.h" "int i = SECPKG_ATTR_DTLS_MTU;" -DSECURITY_WIN32
 
-makeinfo --version > /dev/null 2>&1 && enable makeinfo  || disable makeinfo
-enabled makeinfo \
-    && [ 0$(makeinfo --version | grep "texinfo" | sed 's/.*texinfo[^0-9]*\([0-9]*\)\..*/\1/') -ge 5 ] \
+$makeinfo --version > /dev/null 2>&1 && enable makeinfo_command || disable makeinfo_command makeinfo_html
+if enabled makeinfo_command; then
+  [ 0$($makeinfo --version | grep "texinfo" | sed 's/.*texinfo[^0-9]*\([0-9]*\)\..*/\1/') -ge 5 ] \
     && enable makeinfo_html || disable makeinfo_html
+elif test "$makeinfo" != "$makeinfo_default" ; then
+  warn "Specified makeinfo \"$makeinfo\" not found."
+fi
+
 disabled makeinfo_html && texi2html --help 2> /dev/null | grep -q 'init-file' && enable texi2html || disable texi2html
 perl -v            > /dev/null 2>&1 && enable perl      || disable perl
 pod2man --help     > /dev/null 2>&1 && enable pod2man   || disable pod2man
@@ -7858,7 +7869,7 @@ fi
 if enabled vulkan; then
     check_headers spirv-headers/spirv.h ||
     check_headers spirv/unified1/spirv.h ||
-    warn "spirv-headers not found, swscale SPIR-V backend unavailable"
+    { requested vulkan && warn "spirv-headers not found, swscale SPIR-V backend unavailable"; }
 fi
 
 if enabled x86; then
@@ -8515,7 +8526,7 @@ echo "safe bitstream reader     ${safe_bitstream_reader-no}"
 echo "texi2html enabled         ${texi2html-no}"
 echo "perl enabled              ${perl-no}"
 echo "pod2man enabled           ${pod2man-no}"
-echo "makeinfo enabled          ${makeinfo-no}"
+echo "makeinfo enabled          ${makeinfo_command-no}"
 echo "makeinfo supports HTML    ${makeinfo_html-no}"
 echo "experimental features     ${unstable-no}"
 echo "xmllint enabled           ${xmllint-no}"
@@ -8664,6 +8675,7 @@ LD_PATH=$LD_PATH
 DLLTOOL=$dlltool
 WINDRES=$windres
 DOXYGEN=$doxygen
+MAKEINFO=$makeinfo
 LDFLAGS=$LDFLAGS
 LDEXEFLAGS=$LDEXEFLAGS
 LDSOFLAGS=$LDSOFLAGS
