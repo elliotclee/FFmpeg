@@ -932,10 +932,9 @@ static int mov_read_iacb(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         return AVERROR(ENOMEM);
     iamf = &sc->iamf->iamf;
 
-    st->codecpar->extradata = av_malloc(descriptors_size);
-    if (!st->codecpar->extradata)
-        return AVERROR(ENOMEM);
-    st->codecpar->extradata_size = descriptors_size;
+    ret = ff_alloc_extradata(st->codecpar, descriptors_size);
+    if (ret < 0)
+        return ret;
 
     ret = avio_read(pb, st->codecpar->extradata, descriptors_size);
     if (ret != descriptors_size)
@@ -3043,6 +3042,7 @@ static int mov_finalize_stsd_codec(MOVContext *c, AVIOContext *pb,
     case AV_CODEC_ID_PRORES:
     case AV_CODEC_ID_APV:
     case AV_CODEC_ID_EVC:
+    case AV_CODEC_ID_LCEVC:
     case AV_CODEC_ID_AV1:
         /* field_order detection of H264 requires parsing */
     case AV_CODEC_ID_H264:
@@ -8573,7 +8573,7 @@ static int mov_read_dops(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         return 0;
     st = c->fc->streams[c->fc->nb_streams-1];
 
-    if ((uint64_t)atom.size > (1<<30) || atom.size < 11)
+    if ((uint64_t)atom.size > (1<<30) || atom.size < 11 || st->codecpar->extradata)
         return AVERROR_INVALIDDATA;
 
     /* Check OpusSpecificBox version. */
@@ -8591,7 +8591,11 @@ static int mov_read_dops(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     AV_WL32A(st->codecpar->extradata, MKTAG('O','p','u','s'));
     AV_WL32A(st->codecpar->extradata + 4, MKTAG('H','e','a','d'));
     AV_WB8(st->codecpar->extradata + 8, 1); /* OpusHead version */
-    avio_read(pb, st->codecpar->extradata + 9, size - 9);
+    if ((ret = ffio_read_size(pb, st->codecpar->extradata + 9, size - 9)) < 0) {
+        av_freep(&st->codecpar->extradata);
+        st->codecpar->extradata_size = 0;
+        return ret;
+    }
 
     /* OpusSpecificBox is stored in big-endian, but OpusHead is
        little-endian; aside from the preceding magic and version they're
@@ -8679,8 +8683,10 @@ static int mov_read_lhvc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         // TODO: handle lhvC when present before hvcC
         return 0;
 
-    if (atom.size < 6 || st->codecpar->extradata_size < 23)
+    if (atom.size < 6 || st->codecpar->extradata_size < 23 ||
+        atom.size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE) {
         return AVERROR_INVALIDDATA;
+    }
 
     buf = av_malloc(atom.size + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!buf)
@@ -9213,6 +9219,13 @@ static int mov_read_iref_dimg(MOVContext *c, AVIOContext *pb, int version)
         return AVERROR_INVALIDDATA;
     }
 
+    entries = avio_rb16(pb);
+    if (!entries) {
+        av_log(c->fc, AV_LOG_ERROR,
+               "Derived image item references no input images\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     grid = av_realloc_array(c->heif_grid, c->nb_heif_grid + 1U,
                             sizeof(*c->heif_grid));
     if (!grid)
@@ -9220,7 +9233,6 @@ static int mov_read_iref_dimg(MOVContext *c, AVIOContext *pb, int version)
     c->heif_grid = grid;
     grid = &grid[c->nb_heif_grid];
 
-    entries = avio_rb16(pb);
     grid->tile_id_list = av_malloc_array(entries, sizeof(*grid->tile_id_list));
     grid->tile_idx_list = av_calloc(entries, sizeof(*grid->tile_idx_list));
     grid->tile_item_list = av_calloc(entries, sizeof(*grid->tile_item_list));
